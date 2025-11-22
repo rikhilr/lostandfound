@@ -105,15 +105,15 @@ export default function FoundPage() {
                 onLocationDetected={(detectedLocation) => {
                   setLocation(detectedLocation)
                   toast({
-                    title: "Location detected",
-                    description: `Found location from image: ${detectedLocation}`,
+                    title: "Location auto-filled",
+                    description: "Location detected from photo",
                   })
                 }}
                 currentImage={imageFile ? URL.createObjectURL(imageFile) : null}
               />
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" />
-                AI will analyze the image and generate all necessary information
+                Location will be detected automatically if available in the photo
               </p>
             </div>
 
