@@ -77,11 +77,13 @@ export async function POST(request: NextRequest) {
         .slice(0, 10)
         .map((item: any) => ({
           id: item.id,
-          image_url: item.image_url,
+          image_urls: item.image_urls || (item.image_url ? [item.image_url] : []),
+          image_url: item.image_urls?.[0] || item.image_url,
           auto_title: item.auto_title,
           auto_description: item.auto_description,
           location: item.location,
           created_at: item.created_at,
+          tags: item.tags || [],
           similarity: 0.5, // Approximate similarity for text matches
         }))
 
@@ -94,11 +96,13 @@ export async function POST(request: NextRequest) {
       .filter((item: any) => !item.claimed)
       .map((item: any) => ({
         id: item.id,
-        image_url: item.image_url,
+        image_urls: item.image_urls || (item.image_url ? [item.image_url] : []), // Support both old and new format
+        image_url: item.image_urls?.[0] || item.image_url, // For backward compatibility
         auto_title: item.auto_title,
         auto_description: item.auto_description,
         location: item.location,
         created_at: item.created_at,
+        tags: item.tags || [],
         similarity: item.similarity || 0,
       }))
       .slice(0, 10)

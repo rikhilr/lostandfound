@@ -39,15 +39,37 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Create claim record
+    // Extract name from email if possible, or use contact as name
+    const nameFromContact = claimerContact.includes('@') 
+      ? claimerContact.split('@')[0] 
+      : claimerContact
+    
+    // Try inserting with both claimer_contact and claimant_name (for backward compatibility)
+    const claimData: any = {
+      item_id: itemId,
+      claimer_contact: claimerContact,
+      claimant_name: nameFromContact, // Include this in case the column exists
+    }
+    
     const { error: claimError } = await supabaseAdmin
       .from('item_claims')
-      .insert({
-        item_id: itemId,
-        claimer_contact: claimerContact,
-      })
+      .insert(claimData)
 
     if (claimError) {
       console.error('Claim record error:', claimError)
+      // If error is due to claimant_name, try without it
+      if (claimError.message?.includes('claimant_name')) {
+        const { error: retryError } = await supabaseAdmin
+          .from('item_claims')
+          .insert({
+            item_id: itemId,
+            claimer_contact: claimerContact,
+          })
+        
+        if (retryError) {
+          console.error('Claim record retry error:', retryError)
+        }
+      }
       // Don't fail the request if claim record fails, item is already marked as claimed
     }
 

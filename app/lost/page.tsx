@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { Search, Sparkles, AlertCircle, FileText, MapPin, Bell, X } from 'lucide-react'
+import { Search, Sparkles, AlertCircle, MapPin, Bell, X } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 
 interface SearchResult {
@@ -31,16 +31,13 @@ export default function LostPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
   
+  // Alert State
+  const [alertEnabled, setAlertEnabled] = useState(false)
+  const [contactInfo, setContactInfo] = useState('')
+  const [alertImages, setAlertImages] = useState<File[]>([])
+  
   // Claim State
   const [claimStatus, setClaimStatus] = useState<{ [key: string]: 'success' | 'error' | null }>({})
-
-  // Report State
-  const [showReportForm, setShowReportForm] = useState(false)
-  const [reportDescription, setReportDescription] = useState('')
-  const [reportLocation, setReportLocation] = useState('')
-  const [contactInfo, setContactInfo] = useState('')
-  const [alertEnabled, setAlertEnabled] = useState(true)
-  const [reportImages, setReportImages] = useState<File[]>([])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,10 +52,20 @@ export default function LostPage() {
       return
     }
 
+    if (alertEnabled && !contactInfo.trim()) {
+      toast({
+        title: "Missing Contact Information",
+        description: "Please provide your contact info to enable alerts",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSearching(true)
 
     try {
-      const response = await fetch('/api/search-lost', {
+      // 1. Perform search
+      const searchResponse = await fetch('/api/search-lost', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -69,23 +76,56 @@ export default function LostPage() {
         }),
       })
 
-      const data = await response.json()
+      const searchData = await searchResponse.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Search failed')
+      if (!searchResponse.ok) {
+        throw new Error(searchData.error || 'Search failed')
       }
 
-      setResults(data.results || [])
-      if (data.results?.length === 0) {
+      setResults(searchData.results || [])
+
+      // 2. If alert is enabled, create a lost item report
+      if (alertEnabled && contactInfo.trim()) {
+        try {
+          const formData = new FormData()
+          formData.append('description', description)
+          formData.append('location', searchLocation)
+          formData.append('contact_info', contactInfo)
+          formData.append('alert_enabled', 'true')
+          
+          alertImages.forEach((image) => {
+            formData.append('images', image)
+          })
+
+          const alertResponse = await fetch('/api/report-lost', {
+            method: 'POST',
+            body: formData,
+          })
+
+          if (alertResponse.ok) {
+            toast({
+              title: "Alert Set! 🔔",
+              description: "We'll notify you if someone finds a matching item.",
+            })
+          }
+        } catch (alertErr) {
+          console.error('Failed to set alert:', alertErr)
+          // Don't fail the search if alert creation fails
+        }
+      }
+
+      if (searchData.results?.length === 0) {
         toast({
-          title: "No Matches Found",
-          description: "Try a more detailed description or report your item as lost.",
+          title: alertEnabled ? "No Matches Found - Alert Set" : "No Matches Found",
+          description: alertEnabled 
+            ? "We'll notify you if a matching item is found."
+            : "Try a more detailed description or enable alerts to get notified.",
           variant: "default",
         })
       } else {
         toast({
           title: "Search Complete",
-          description: `Found ${data.results?.length || 0} potential match${data.results?.length !== 1 ? 'es' : ''}`,
+          description: `Found ${searchData.results?.length || 0} potential match${searchData.results?.length !== 1 ? 'es' : ''}${alertEnabled ? ' - Alert also set!' : ''}`,
         })
       }
     } catch (err) {
@@ -99,58 +139,6 @@ export default function LostPage() {
     }
   }
 
-  const handleReportLost = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!reportDescription || !contactInfo) {
-      toast({
-        title: "Missing Information",
-        description: "Description and contact info are required.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const formData = new FormData()
-      formData.append('description', reportDescription)
-      formData.append('location', reportLocation)
-      formData.append('contact_info', contactInfo)
-      formData.append('alert_enabled', alertEnabled.toString())
-      
-      // Add images
-      reportImages.forEach((image) => {
-        formData.append('images', image)
-      })
-
-      const response = await fetch('/api/report-lost', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) throw new Error('Failed to report item')
-
-      toast({
-        title: "Item Reported",
-        description: alertEnabled 
-          ? "We'll notify you if a matching item is found!" 
-          : "Your item has been reported.",
-      })
-      setShowReportForm(false)
-      // Reset form
-      setReportDescription('')
-      setReportLocation('')
-      setContactInfo('')
-      setAlertEnabled(true)
-      setReportImages([])
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: "Could not report item. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }
 
   const handleClaim = async (itemId: string, claimerContact: string) => {
     try {
@@ -172,20 +160,11 @@ export default function LostPage() {
       }
 
       setClaimStatus({ ...claimStatus, [itemId]: 'success' })
+      // Show a simple success message with contact info
       toast({
-        title: "Item Claimed! 🎉",
-        description: (
-          <div className="mt-2">
-            <p className="mb-2">Contact the finder:</p>
-            <a 
-              href={`mailto:${data.finderEmail || data.finderContact}?subject=Claiming my lost item&body=Hi, I believe this is my lost item. Please let me know how we can arrange pickup.`}
-              className="text-primary underline font-medium"
-            >
-              {data.finderContact}
-            </a>
-          </div>
-        ),
-        duration: 10000,
+        title: "Item Claimed!",
+        description: `Contact the finder at: ${data.finderContact}`,
+        duration: 5000,
       })
     } catch (err) {
       setClaimStatus({ ...claimStatus, [itemId]: 'error' })
@@ -201,191 +180,156 @@ export default function LostPage() {
     <div className="container max-w-7xl py-12 md:py-24">
       <div className="mb-8 text-center">
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl mb-4">
-          {showReportForm ? 'Report Lost Item' : 'Search for Lost Item'}
+          Search for Lost Item
         </h1>
         <p className="text-lg text-muted-foreground">
-          {showReportForm 
-            ? 'Tell us what you lost so we can notify you when it\'s found'
-            : 'Describe what you lost and let AI find it for you'}
+          Describe what you lost and let AI find it for you
         </p>
       </div>
 
       <Card className="border-2 mb-12">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              {showReportForm ? <FileText className="h-5 w-5" /> : <Search className="h-5 w-5" />}
-              {showReportForm ? 'Item Details' : 'Search Description'}
-            </CardTitle>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-5 w-5" />
+            Search Description
+          </CardTitle>
           <CardDescription>
-            {showReportForm
-              ? "Create a persistent report. We'll assume you've already searched above."
-              : "Be as detailed as possible. Our AI will match your description to found items."}
+            Be as detailed as possible. Our AI will match your description to found items.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {showReportForm ? (
-            <form onSubmit={handleReportLost} className="space-y-4 animate-fade-in">
-              <div className="space-y-2">
-                <Label htmlFor="report-desc">Item Description</Label>
-                <Textarea 
-                  id="report-desc" 
-                  value={reportDescription} 
-                  onChange={(e) => setReportDescription(e.target.value)}
-                  placeholder="e.g., A black leather wallet with a red stripe..."
-                  rows={4}
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="report-location">Lost Location (Optional)</Label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="report-location"
-                    value={reportLocation}
-                    onChange={(e) => setReportLocation(e.target.value)}
-                    placeholder="e.g. Central Park, Cafe Nero..."
-                    className="pl-9"
-                  />
-                </div>
-              </div>
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="description">Describe Your Lost Item</Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g., A black leather wallet with a red stripe, containing a driver's license..."
+                rows={5}
+                className="resize-none"
+                required
+              />
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="contact">Contact Email/Phone</Label>
-                <Input 
-                  id="contact" 
-                  placeholder="email@example.com"
-                  value={contactInfo}
-                  onChange={(e) => setContactInfo(e.target.value)}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  We'll use this to contact you if someone finds your item.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="images">Images (Optional)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="search-location">Location Lost (Optional)</Label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="images"
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || [])
-                    setReportImages(files)
-                  }}
+                  id="search-location"
+                  value={searchLocation}
+                  onChange={(e) => setSearchLocation(e.target.value)}
+                  placeholder="e.g. Central Park, Subway..."
+                  className="pl-9"
                 />
-                {reportImages.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {reportImages.map((file, idx) => (
-                      <div key={idx} className="relative">
-                        <img
-                          src={URL.createObjectURL(file)}
-                          alt={`Preview ${idx + 1}`}
-                          className="h-20 w-20 object-cover rounded border"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newImages = reportImages.filter((_, i) => i !== idx)
-                            setReportImages(newImages)
-                          }}
-                          className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                Adding a location helps AI filter relevant items
+              </p>
+            </div>
+
+            {/* Alert Toggle Section */}
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+              <div className="space-y-0.5">
+                <Label htmlFor="alert-toggle" className="flex items-center gap-2 cursor-pointer">
+                  <Bell className="h-4 w-4" />
+                  Alert me if found
+                </Label>
                 <p className="text-xs text-muted-foreground">
-                  Upload multiple images to help identify your item
+                  Get notified automatically when someone finds a matching item
                 </p>
               </div>
+              <Switch
+                id="alert-toggle"
+                checked={alertEnabled}
+                onCheckedChange={setAlertEnabled}
+              />
+            </div>
 
-              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label htmlFor="alert-toggle" className="flex items-center gap-2">
-                    <Bell className="h-4 w-4" />
-                    Alert me if found
-                  </Label>
+            {/* Conditional fields when alert is enabled */}
+            {alertEnabled && (
+              <div className="space-y-4 p-4 border rounded-lg bg-muted/20 animate-fade-in">
+                <div className="space-y-2">
+                  <Label htmlFor="contact">Contact Email/Phone *</Label>
+                  <Input 
+                    id="contact" 
+                    placeholder="email@example.com or phone number"
+                    value={contactInfo}
+                    onChange={(e) => setContactInfo(e.target.value)}
+                    required={alertEnabled}
+                  />
                   <p className="text-xs text-muted-foreground">
-                    Get notified automatically when someone finds a matching item
+                    We'll use this to contact you if someone finds your item.
                   </p>
                 </div>
-                <Switch
-                  id="alert-toggle"
-                  checked={alertEnabled}
-                  onCheckedChange={setAlertEnabled}
-                />
-              </div>
 
-              <Button type="submit" size="lg" className="w-full">
-                <FileText className="mr-2 h-4 w-4" />
-                Submit Lost Item Report
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleSearch} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="description">Describe Your Lost Item</Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g., A black leather wallet with a red stripe, containing a driver's license..."
-                  rows={5}
-                  className="resize-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="search-location">Location Lost (Optional)</Label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <div className="space-y-2">
+                  <Label htmlFor="alert-images">Images (Optional)</Label>
                   <Input
-                    id="search-location"
-                    value={searchLocation}
-                    onChange={(e) => setSearchLocation(e.target.value)}
-                    placeholder="e.g. Central Park, Subway..."
-                    className="pl-9"
+                    id="alert-images"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      setAlertImages(files)
+                    }}
                   />
+                  {alertImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {alertImages.map((file, idx) => (
+                        <div key={idx} className="relative">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={`Preview ${idx + 1}`}
+                            className="h-20 w-20 object-cover rounded border"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newImages = alertImages.filter((_, i) => i !== idx)
+                              setAlertImages(newImages)
+                            }}
+                            className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Upload multiple images to help identify your item
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Sparkles className="h-3 w-3" />
-                  Adding a location helps AI filter relevant items
-                </p>
               </div>
+            )}
 
-              <Button
-                type="submit"
-                disabled={isSearching}
-                size="lg"
-                className="w-full"
-              >
-                {isSearching ? (
-                  <>
-                    <Search className="mr-2 h-4 w-4 animate-pulse" />
-                    Searching with AI...
-                  </>
-                ) : (
-                  <>
-                    <Search className="mr-2 h-4 w-4" />
-                    Search for Matches
-                  </>
-                )}
-              </Button>
-            </form>
-          )}
+            <Button
+              type="submit"
+              disabled={isSearching}
+              size="lg"
+              className="w-full"
+            >
+              {isSearching ? (
+                <>
+                  <Search className="mr-2 h-4 w-4 animate-pulse" />
+                  Searching with AI...
+                </>
+              ) : (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Search for Matches
+                </>
+              )}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
-      {results.length > 0 && !showReportForm && (
+      {results.length > 0 && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex items-center justify-between">
             <h2 className="text-3xl font-bold tracking-tight">
@@ -409,17 +353,14 @@ export default function LostPage() {
         </div>
       )}
 
-      {results.length === 0 && !isSearching && !showReportForm && (
+      {results.length === 0 && !isSearching && (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No search results yet</h3>
             <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-              Enter a detailed description above and click search to find matching items.
+              Enter a detailed description above and click search to find matching items. Enable "Alert me if found" to get notified when someone finds your item.
             </p>
-            <Button variant="outline" onClick={() => setShowReportForm(true)}>
-              Report Missing Item
-            </Button>
           </CardContent>
         </Card>
       )}

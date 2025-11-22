@@ -10,13 +10,14 @@ import { cn } from '@/lib/utils'
 import exifr from 'exifr'
 
 interface ImageUploadProps {
-  onImageSelect: (file: File) => void
+  onImageSelect: (files: File[]) => void
   onLocationDetected?: (location: string) => void
-  currentImage?: string | null
+  currentImages?: string[]
 }
 
-export default function ImageUpload({ onImageSelect, onLocationDetected, currentImage }: ImageUploadProps) {
-  const [preview, setPreview] = useState<string | null>(currentImage || null)
+export default function ImageUpload({ onImageSelect, onLocationDetected, currentImages = [] }: ImageUploadProps) {
+  const [previews, setPreviews] = useState<string[]>(currentImages)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [locationStatus, setLocationStatus] = useState<string>('')
   const [showCamera, setShowCamera] = useState(false)
@@ -61,10 +62,8 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     try {
       await logToServer('Starting EXIF extraction', { fileName: file.name, fileSize: file.size, fileType: file.type })
       
-      // Try multiple EXIF parsing strategies
       let exifData: any = null
       
-      // Strategy 1: Parse with GPS focus
       try {
         exifData = await exifr.parse(file, { gps: true })
         await logToServer('EXIF parse (GPS focus)', { 
@@ -76,7 +75,6 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
         await logToServer('EXIF parse (GPS focus) failed', { error: String(e) })
       }
       
-      // Strategy 2: If no GPS, try full parse
       if (!exifData?.latitude || !exifData?.longitude) {
         try {
           const fullExif = await exifr.parse(file)
@@ -88,7 +86,6 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
             hasGPS: !!fullExif?.GPS
           })
           
-          // Check if GPS data is nested
           if (fullExif?.GPS?.latitude && fullExif?.GPS?.longitude) {
             exifData = {
               latitude: fullExif.GPS.latitude,
@@ -159,52 +156,72 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     })
   }
 
-  const handleFileChange = async (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image size must be less than 5MB')
-      return
-    }
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file')
-      return
+  const handleFileChange = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+
+    const newFiles: File[] = []
+    const newPreviews: string[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`${file.name} is too large (max 5MB)`)
+        continue
+      }
+      if (!file.type.startsWith('image/')) {
+        alert(`${file.name} is not an image file`)
+        continue
+      }
+
+      newFiles.push(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setPreviews(prev => [...prev, reader.result as string])
+      }
+      reader.readAsDataURL(file)
     }
 
-    setIsProcessing(true)
-    setLocationStatus('Processing image...')
+    if (newFiles.length > 0) {
+      const updatedFiles = [...imageFiles, ...newFiles]
+      setImageFiles(updatedFiles)
+      onImageSelect(updatedFiles)
 
-    // Show preview
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setPreview(reader.result as string)
-    }
-    reader.readAsDataURL(file)
-    onImageSelect(file)
+      // Try to extract location from first image only
+      if (imageFiles.length === 0 && newFiles.length > 0 && !locationStatus) {
+        setIsProcessing(true)
+        setLocationStatus('Processing image...')
 
-    // Try to extract location - EXIF first, then geolocation
-    let location: string | null = null
-    
-    // 1. Try EXIF data first
-    await logToServer('Step 1: Trying EXIF extraction')
-    location = await extractLocationFromImage(file)
-    await logToServer('After EXIF extraction', { location })
-    
-    // 2. If no location from EXIF, try current device location
-    if (!location) {
-      await logToServer('Step 2: Trying device geolocation (EXIF failed)')
-      location = await getCurrentLocation()
-      await logToServer('After geolocation', { location })
-    }
+        let location: string | null = null
+        
+        location = await extractLocationFromImage(newFiles[0])
+        
+        if (!location) {
+          location = await getCurrentLocation()
+        }
 
-    if (location && onLocationDetected) {
-      await logToServer('Location detected successfully', { location })
-      onLocationDetected(location)
-      setLocationStatus(`Location detected: ${location}`)
-    } else {
-      await logToServer('Location detection failed - both methods failed')
-      setLocationStatus('Location not detected - please enter manually')
+        if (location && onLocationDetected) {
+          await logToServer('Location detected successfully', { location })
+          onLocationDetected(location)
+          setLocationStatus(`Location detected: ${location}`)
+        } else {
+          await logToServer('Location detection failed - both methods failed')
+          setLocationStatus('Location not detected - please enter manually')
+        }
+        
+        setIsProcessing(false)
+      }
     }
-    
-    setIsProcessing(false)
+  }
+
+  const removeImage = (index: number) => {
+    const newFiles = imageFiles.filter((_, i) => i !== index)
+    const newPreviews = previews.filter((_, i) => i !== index)
+    setImageFiles(newFiles)
+    setPreviews(newPreviews)
+    onImageSelect(newFiles)
   }
 
   const isMobile = () => {
@@ -220,7 +237,6 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
       setStream(mediaStream)
       setShowCamera(true)
       
-      // Wait for video element to be ready
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream
@@ -253,41 +269,32 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
 
     if (!context) return
 
-    // Set canvas dimensions to match video
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
 
-    // Draw video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-    // Convert canvas to blob, then to File
     canvas.toBlob(async (blob) => {
       if (!blob) return
 
-      // Create a File from the blob
       const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
       
-      // Stop camera
       stopCamera()
       
-      // Process the captured photo
-      await handleFileChange(file)
+      await handleFileChange({ length: 1, 0: file, item: () => file, [Symbol.iterator]: function*() { yield file } } as any)
     }, 'image/jpeg', 0.95)
   }
 
   const handleClick = async (useCamera: boolean) => {
     if (useCamera) {
       if (isMobile()) {
-        // On mobile, use file input with capture
         if (cameraInputRef.current) {
           cameraInputRef.current.click()
         }
       } else {
-        // On desktop, use getUserMedia for live camera
         await startCamera()
       }
     } else {
-      // Upload photo
       if (uploadInputRef.current) {
         uploadInputRef.current.click()
       }
@@ -296,8 +303,10 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
 
   const handleRemove = () => {
     stopCamera()
-    setPreview(null)
+    setPreviews([])
+    setImageFiles([])
     setLocationStatus('')
+    onImageSelect([])
     if (cameraInputRef.current) {
       cameraInputRef.current.value = ''
     }
@@ -306,7 +315,6 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     }
   }
 
-  // Cleanup stream on unmount
   useEffect(() => {
     return () => {
       if (stream) {
@@ -317,31 +325,21 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
 
   return (
     <div className="w-full space-y-4">
-      {/* Camera input - always uses capture attribute */}
       <input
         type="file"
         ref={cameraInputRef}
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) {
-            handleFileChange(file)
-          }
-        }}
+        onChange={(e) => handleFileChange(e.target.files)}
         accept="image/*"
         capture="environment"
+        multiple
         className="hidden"
       />
-      {/* Upload input - no capture attribute */}
       <input
         type="file"
         ref={uploadInputRef}
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) {
-            handleFileChange(file)
-          }
-        }}
+        onChange={(e) => handleFileChange(e.target.files)}
         accept="image/*"
+        multiple
         className="hidden"
       />
 
@@ -379,7 +377,7 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
             </div>
           </div>
         </Card>
-      ) : !preview ? (
+      ) : previews.length === 0 ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Button
@@ -410,34 +408,61 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
               <div className="rounded-full bg-primary/10 p-3">
                 <Upload className="h-6 w-6 text-primary" />
               </div>
-              <span className="font-medium">Upload Photo</span>
+              <span className="font-medium">Upload Photos</span>
             </Button>
           </div>
           <p className="text-xs text-center text-muted-foreground">
-            Choose to take a new photo or upload an existing one
+            You can add multiple photos
           </p>
         </div>
       ) : (
         <Card className="border-2 overflow-hidden shadow-lg">
-          <div className="relative">
-            <div className="relative aspect-video w-full bg-muted/30 flex items-center justify-center overflow-hidden rounded-t-lg">
-              <img
-                src={preview}
-                alt="Preview"
-                className="w-full h-full object-contain"
-              />
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {previews.map((preview, index) => (
+                <div key={index} className="relative aspect-square rounded-lg overflow-hidden border bg-muted/30 group">
+                  <img
+                    src={preview}
+                    alt={`Preview ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-2 right-2 h-7 w-7 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => removeImage(index)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
+                    {index + 1} / {previews.length}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <Button
                 type="button"
-                variant="destructive"
-                size="icon"
-                className="absolute top-3 right-3 h-9 w-9 rounded-full shadow-lg hover:scale-110 transition-transform"
-                onClick={handleRemove}
+                variant="outline"
+                onClick={() => handleClick(true)}
+                size="sm"
               >
-                <X className="h-4 w-4" />
+                <Camera className="mr-2 h-4 w-4" />
+                Add Photo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleClick(false)}
+                size="sm"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Add More
               </Button>
             </div>
             {(isProcessing || locationStatus) && (
-              <div className="p-4 bg-muted/30 border-t">
+              <div className="p-3 bg-muted/30 border rounded-lg">
                 {isProcessing ? (
                   <div className="flex items-center gap-3 text-sm">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -458,28 +483,6 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
                 ) : null}
               </div>
             )}
-          </div>
-          <div className="p-4 grid grid-cols-2 gap-3 border-t bg-muted/20">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleClick(true)}
-              size="sm"
-              className="hover:bg-primary/5"
-            >
-              <Camera className="mr-2 h-4 w-4" />
-              Retake
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleClick(false)}
-              size="sm"
-              className="hover:bg-primary/5"
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              Change
-            </Button>
           </div>
         </Card>
       )}

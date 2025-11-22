@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Create found items table
 CREATE TABLE IF NOT EXISTS items_found (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  image_url TEXT NOT NULL,
+  image_urls TEXT[] NOT NULL DEFAULT '{}',
   auto_title TEXT NOT NULL,
   auto_description TEXT NOT NULL,
   tags TEXT[] DEFAULT '{}',
@@ -62,7 +62,7 @@ CREATE OR REPLACE FUNCTION search_similar_items(
 )
 RETURNS TABLE (
   id UUID,
-  image_url TEXT,
+  image_urls TEXT[],
   auto_title TEXT,
   auto_description TEXT,
   tags TEXT[],
@@ -78,7 +78,7 @@ BEGIN
   RETURN QUERY
   SELECT
     items_found.id,
-    items_found.image_url,
+    items_found.image_urls,
     items_found.auto_title,
     items_found.auto_description,
     items_found.tags,

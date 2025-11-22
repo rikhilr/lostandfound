@@ -1,9 +1,17 @@
 -- Migration script to update existing database schema
 -- Run this in your Supabase SQL editor if you already have tables
 
--- 1. Add contact_info to items_found if it doesn't exist
+-- 1. Add contact_info and image_urls to items_found if they don't exist
 ALTER TABLE items_found 
 ADD COLUMN IF NOT EXISTS contact_info TEXT;
+
+ALTER TABLE items_found 
+ADD COLUMN IF NOT EXISTS image_urls TEXT[];
+
+-- Migrate existing image_url to image_urls array
+UPDATE items_found 
+SET image_urls = ARRAY[image_url]::TEXT[]
+WHERE image_urls IS NULL AND image_url IS NOT NULL;
 
 -- Set a default for existing rows (you may want to update these manually)
 UPDATE items_found 
@@ -28,6 +36,14 @@ DROP COLUMN IF EXISTS proof_answer;
 ALTER TABLE item_claims 
 DROP COLUMN IF EXISTS verified;
 
+-- Handle claimant_name if it exists (make it nullable)
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'item_claims' AND column_name = 'claimant_name') THEN
+    ALTER TABLE item_claims ALTER COLUMN claimant_name DROP NOT NULL;
+  END IF;
+END $$;
+
 ALTER TABLE item_claims 
 ADD COLUMN IF NOT EXISTS claimer_contact TEXT;
 
@@ -46,7 +62,7 @@ CREATE FUNCTION search_similar_items(
 )
 RETURNS TABLE (
   id UUID,
-  image_url TEXT,
+  image_urls TEXT[],
   auto_title TEXT,
   auto_description TEXT,
   tags TEXT[],
@@ -62,7 +78,7 @@ BEGIN
   RETURN QUERY
   SELECT
     items_found.id,
-    items_found.image_url,
+    items_found.image_urls,
     items_found.auto_title,
     items_found.auto_description,
     items_found.tags,

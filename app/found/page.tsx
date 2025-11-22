@@ -13,7 +13,7 @@ import { Upload, Sparkles, MapPin, AlertCircle } from 'lucide-react'
 export default function FoundPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const [location, setLocation] = useState('')
   const [contactInfo, setContactInfo] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -21,10 +21,10 @@ export default function FoundPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!imageFile) {
+    if (imageFiles.length === 0) {
       toast({
-        title: "Missing Image",
-        description: "Please upload an image of the found item",
+        title: "Missing Images",
+        description: "Please upload at least one image of the found item",
         variant: "destructive",
       })
       return
@@ -52,7 +52,9 @@ export default function FoundPage() {
 
     try {
       const formData = new FormData()
-      formData.append('image', imageFile)
+      imageFiles.forEach((file) => {
+        formData.append('images', file)
+      })
       formData.append('location', location)
       formData.append('contact_info', contactInfo)
 
@@ -113,9 +115,9 @@ export default function FoundPage() {
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl mb-4">
           Report Found Item
         </h1>
-        <p className="text-lg text-muted-foreground">
-          Upload a photo and let our AI do the rest
-        </p>
+          <p className="text-lg text-muted-foreground">
+            Upload photos and let our AI do the rest
+          </p>
       </div>
 
       <Card className="border-2">
@@ -133,7 +135,7 @@ export default function FoundPage() {
             <div className="space-y-2">
               <Label htmlFor="image">Upload Photo</Label>
               <ImageUpload
-                onImageSelect={(file) => setImageFile(file)}
+                onImageSelect={(files) => setImageFiles(files)}
                 onLocationDetected={(detectedLocation) => {
                   setLocation(detectedLocation)
                   toast({
@@ -141,7 +143,7 @@ export default function FoundPage() {
                     description: "Location detected from photo",
                   })
                 }}
-                currentImage={imageFile ? URL.createObjectURL(imageFile) : null}
+                currentImages={imageFiles.map(file => URL.createObjectURL(file))}
               />
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" />
