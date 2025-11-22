@@ -8,6 +8,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const imageFile = formData.get('image') as File
     const location = formData.get('location') as string
+    const contactInfo = formData.get('contact_info') as string
 
     if (!imageFile) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
@@ -15,6 +16,10 @@ export async function POST(request: NextRequest) {
 
     if (!location) {
       return NextResponse.json({ error: 'Location is required' }, { status: 400 })
+    }
+
+    if (!contactInfo) {
+      return NextResponse.json({ error: 'Contact information is required' }, { status: 400 })
     }
 
     // 1. Upload image to Supabase Storage
@@ -60,8 +65,8 @@ export async function POST(request: NextRequest) {
         auto_title: analysis.title,
         auto_description: analysis.description,
         tags: analysis.tags,
-        proof_question: analysis.proofQuestion,
         location: location,
+        contact_info: contactInfo,
         embedding: combinedEmbedding,
         claimed: false,
       })
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save item' }, { status: 500 })
     }
 
-    // 6. Reverse Match: Check if this found item matches any reported lost items
+    // 6. Reverse Match: Check if this found item matches any reported lost items with alerts enabled
     const { data: matchingLostItems } = await supabaseAdmin.rpc(
       'search_similar_lost_items',
       {

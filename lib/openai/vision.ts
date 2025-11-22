@@ -4,7 +4,6 @@ export interface ImageAnalysis {
   title: string
   description: string
   tags: string[]
-  proofQuestion: string
 }
 
 /**
@@ -27,14 +26,12 @@ export async function analyzeImage(imageUrl: string): Promise<ImageAnalysis> {
 1. A concise title (max 50 characters)
 2. A detailed description (2-3 sentences)
 3. A list of 5-8 relevant tags (comma-separated)
-4. A proof question that asks about a specific, unique detail visible in the image (e.g., "What color is the logo on the left side?" or "What text is written on the tag?")
 
 Format your response as JSON:
 {
   "title": "...",
   "description": "...",
-  "tags": ["tag1", "tag2", ...],
-  "proofQuestion": "..."
+  "tags": ["tag1", "tag2", ...]
 }`,
           },
           {
@@ -64,7 +61,6 @@ Format your response as JSON:
       title: lines[0]?.replace(/^title:?\s*/i, '') || 'Found Item',
       description: lines.slice(1, 3).join(' ') || 'A found item',
       tags: lines[3]?.split(',').map(t => t.trim()) || [],
-      proofQuestion: lines[4]?.replace(/^proof question:?\s*/i, '') || 'What color is the item?',
     }
   }
 }

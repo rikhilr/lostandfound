@@ -15,6 +15,7 @@ export default function FoundPage() {
   const { toast } = useToast()
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [location, setLocation] = useState('')
+  const [contactInfo, setContactInfo] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,12 +39,22 @@ export default function FoundPage() {
       return
     }
 
+    if (!contactInfo.trim()) {
+      toast({
+        title: "Missing Contact Information",
+        description: "Please provide your email or phone number so the owner can contact you",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
       const formData = new FormData()
       formData.append('image', imageFile)
       formData.append('location', location)
+      formData.append('contact_info', contactInfo)
 
       const response = await fetch('/api/found-item', {
         method: 'POST',
@@ -152,6 +163,21 @@ export default function FoundPage() {
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="contact">Your Contact Information</Label>
+              <Input
+                id="contact"
+                type="text"
+                value={contactInfo}
+                onChange={(e) => setContactInfo(e.target.value)}
+                placeholder="email@example.com or phone number"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                This will be shared with the owner if they claim this item
+              </p>
             </div>
 
             <Button

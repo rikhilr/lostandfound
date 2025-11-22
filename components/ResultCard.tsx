@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MapPin, Calendar, Shield, CheckCircle2 } from 'lucide-react'
+import { MapPin, Calendar, Shield, CheckCircle2, Mail } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ResultCardProps {
@@ -17,27 +17,26 @@ interface ResultCardProps {
     auto_description: string
     location: string
     created_at: string
-    proof_question: string
   }
-  onClaim: (itemId: string, proofAnswer: string) => void
+  onClaim: (itemId: string, claimerContact: string) => void
 }
 
 export default function ResultCard({ item, onClaim }: ResultCardProps) {
   const [showClaimForm, setShowClaimForm] = useState(false)
-  const [proofAnswer, setProofAnswer] = useState('')
+  const [claimerContact, setClaimerContact] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [imageError, setImageError] = useState(false)
 
   const handleClaim = async () => {
-    if (!proofAnswer.trim()) {
+    if (!claimerContact.trim()) {
       return
     }
     setIsSubmitting(true)
     try {
-      await onClaim(item.id, proofAnswer)
+      await onClaim(item.id, claimerContact)
       if (showClaimForm) {
         setShowClaimForm(false)
-        setProofAnswer('')
+        setClaimerContact('')
       }
     } finally {
       setIsSubmitting(false)
@@ -92,47 +91,49 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
         ) : (
           <div className="space-y-4 animate-fade-in">
             <div className="rounded-lg border bg-muted/50 p-3">
-              <div className="flex items-start gap-2 mb-2">
-                <Shield className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <div className="flex items-start gap-2">
+                <Mail className="h-4 w-4 text-primary mt-0.5 shrink-0" />
                 <div className="flex-1">
-                  <Label className="text-sm font-medium">Verification Question</Label>
-                  <p className="text-sm text-muted-foreground mt-1">{item.proof_question}</p>
+                  <Label className="text-sm font-medium">Your Contact Information</Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    We'll share your contact info with the finder so they can reach out to you.
+                  </p>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`answer-${item.id}`}>Your Answer</Label>
+              <Label htmlFor={`contact-${item.id}`}>Email or Phone</Label>
               <Input
-                id={`answer-${item.id}`}
+                id={`contact-${item.id}`}
                 type="text"
-                value={proofAnswer}
-                onChange={(e) => setProofAnswer(e.target.value)}
-                placeholder="Enter your answer..."
+                value={claimerContact}
+                onChange={(e) => setClaimerContact(e.target.value)}
+                placeholder="your@email.com or phone number"
                 disabled={isSubmitting}
               />
             </div>
             <div className="flex gap-2">
               <Button
                 onClick={handleClaim}
-                disabled={isSubmitting || !proofAnswer.trim()}
+                disabled={isSubmitting || !claimerContact.trim()}
                 className="flex-1"
               >
                 {isSubmitting ? (
                   <>
-                    <Shield className="mr-2 h-4 w-4 animate-pulse" />
-                    Verifying...
+                    <CheckCircle2 className="mr-2 h-4 w-4 animate-pulse" />
+                    Claiming...
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Verify & Claim
+                    Claim Item
                   </>
                 )}
               </Button>
               <Button
                 onClick={() => {
                   setShowClaimForm(false)
-                  setProofAnswer('')
+                  setClaimerContact('')
                 }}
                 variant="outline"
                 disabled={isSubmitting}

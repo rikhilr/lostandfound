@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS items_found (
   auto_title TEXT NOT NULL,
   auto_description TEXT NOT NULL,
   tags TEXT[] DEFAULT '{}',
-  proof_question TEXT NOT NULL,
   location TEXT NOT NULL,
+  contact_info TEXT NOT NULL,
   embedding vector(1536), -- OpenAI text-embedding-3-small produces 1536-dimensional vectors
   claimed BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS items_lost (
   description TEXT NOT NULL,
   location TEXT,
   contact_info TEXT NOT NULL,
+  image_urls TEXT[] DEFAULT '{}',
+  alert_enabled BOOLEAN DEFAULT FALSE,
   embedding vector(1536),
   status TEXT DEFAULT 'active', -- 'active', 'found', 'expired'
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -31,10 +33,8 @@ CREATE TABLE IF NOT EXISTS items_lost (
 CREATE TABLE IF NOT EXISTS item_claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   item_id UUID NOT NULL REFERENCES items_found(id) ON DELETE CASCADE,
-  proof_answer TEXT NOT NULL,
-  verified BOOLEAN DEFAULT FALSE,
   claimed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  contact_info TEXT,
+  claimer_contact TEXT NOT NULL,
   FOREIGN KEY (item_id) REFERENCES items_found(id)
 );
 
@@ -66,13 +66,13 @@ RETURNS TABLE (
   auto_title TEXT,
   auto_description TEXT,
   tags TEXT[],
-  proof_question TEXT,
   location TEXT,
   created_at TIMESTAMP WITH TIME ZONE,
   claimed BOOLEAN,
   similarity float
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
   RETURN QUERY
@@ -82,7 +82,6 @@ BEGIN
     items_found.auto_title,
     items_found.auto_description,
     items_found.tags,
-    items_found.proof_question,
     items_found.location,
     items_found.created_at,
     items_found.claimed,
@@ -106,10 +105,12 @@ RETURNS TABLE (
   description TEXT,
   location TEXT,
   contact_info TEXT,
+  alert_enabled BOOLEAN,
   similarity float,
   created_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
   RETURN QUERY
@@ -118,10 +119,12 @@ BEGIN
     items_lost.description,
     items_lost.location,
     items_lost.contact_info,
+    items_lost.alert_enabled,
     1 - (items_lost.embedding <=> query_embedding) AS similarity,
     items_lost.created_at
   FROM items_lost
   WHERE items_lost.status = 'active'
+    AND items_lost.alert_enabled = TRUE
     AND 1 - (items_lost.embedding <=> query_embedding) > match_threshold
   ORDER BY items_lost.embedding <=> query_embedding
   LIMIT match_count;
@@ -141,3 +144,7 @@ CREATE TRIGGER update_items_found_updated_at
   BEFORE UPDATE ON items_found
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Grant execute permissions for PostgREST
+GRANT EXECUTE ON FUNCTION search_similar_items TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_similar_lost_items TO anon, authenticated;

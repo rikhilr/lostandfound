@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { Search, Sparkles, AlertCircle, FileText, MapPin } from 'lucide-react'
+import { Search, Sparkles, AlertCircle, FileText, MapPin, Bell, X } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 
 interface SearchResult {
   id: string
@@ -38,6 +39,8 @@ export default function LostPage() {
   const [reportDescription, setReportDescription] = useState('')
   const [reportLocation, setReportLocation] = useState('')
   const [contactInfo, setContactInfo] = useState('')
+  const [alertEnabled, setAlertEnabled] = useState(true)
+  const [reportImages, setReportImages] = useState<File[]>([])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,27 +112,37 @@ export default function LostPage() {
     }
 
     try {
+      const formData = new FormData()
+      formData.append('description', reportDescription)
+      formData.append('location', reportLocation)
+      formData.append('contact_info', contactInfo)
+      formData.append('alert_enabled', alertEnabled.toString())
+      
+      // Add images
+      reportImages.forEach((image) => {
+        formData.append('images', image)
+      })
+
       const response = await fetch('/api/report-lost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          description: reportDescription, 
-          location: reportLocation,
-          contactInfo 
-        }),
+        body: formData,
       })
 
       if (!response.ok) throw new Error('Failed to report item')
 
       toast({
         title: "Item Reported",
-        description: "We'll notify you if a matching item is found!",
+        description: alertEnabled 
+          ? "We'll notify you if a matching item is found!" 
+          : "Your item has been reported.",
       })
       setShowReportForm(false)
       // Reset form
       setReportDescription('')
       setReportLocation('')
       setContactInfo('')
+      setAlertEnabled(true)
+      setReportImages([])
     } catch (err) {
       toast({
         title: "Error",
@@ -139,7 +152,7 @@ export default function LostPage() {
     }
   }
 
-  const handleClaim = async (itemId: string, proofAnswer: string) => {
+  const handleClaim = async (itemId: string, claimerContact: string) => {
     try {
       const response = await fetch('/api/claim-item', {
         method: 'POST',
@@ -148,7 +161,7 @@ export default function LostPage() {
         },
         body: JSON.stringify({
           itemId,
-          proofAnswer,
+          claimerContact,
         }),
       })
 
@@ -160,14 +173,25 @@ export default function LostPage() {
 
       setClaimStatus({ ...claimStatus, [itemId]: 'success' })
       toast({
-        title: "Match Confirmed! 🎉",
-        description: data.contactInfo || 'Contact information will be sent to your email.',
+        title: "Item Claimed! 🎉",
+        description: (
+          <div className="mt-2">
+            <p className="mb-2">Contact the finder:</p>
+            <a 
+              href={`mailto:${data.finderEmail || data.finderContact}?subject=Claiming my lost item&body=Hi, I believe this is my lost item. Please let me know how we can arrange pickup.`}
+              className="text-primary underline font-medium"
+            >
+              {data.finderContact}
+            </a>
+          </div>
+        ),
+        duration: 10000,
       })
     } catch (err) {
       setClaimStatus({ ...claimStatus, [itemId]: 'error' })
       toast({
-        title: "Verification Failed",
-        description: err instanceof Error ? err.message : 'Please check your answer and try again.',
+        title: "Claim Failed",
+        description: err instanceof Error ? err.message : 'Please try again.',
         variant: "destructive",
       })
     }
@@ -193,16 +217,6 @@ export default function LostPage() {
               {showReportForm ? <FileText className="h-5 w-5" /> : <Search className="h-5 w-5" />}
               {showReportForm ? 'Item Details' : 'Search Description'}
             </CardTitle>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setShowReportForm(!showReportForm)
-                setResults([])
-              }}
-              className="gap-2"
-            >
-              {showReportForm ? "Back to Search" : "Report Missing Item"}
-            </Button>
           </div>
           <CardDescription>
             {showReportForm
@@ -251,6 +265,63 @@ export default function LostPage() {
                 <p className="text-xs text-muted-foreground">
                   We'll use this to contact you if someone finds your item.
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="images">Images (Optional)</Label>
+                <Input
+                  id="images"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || [])
+                    setReportImages(files)
+                  }}
+                />
+                {reportImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {reportImages.map((file, idx) => (
+                      <div key={idx} className="relative">
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={`Preview ${idx + 1}`}
+                          className="h-20 w-20 object-cover rounded border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newImages = reportImages.filter((_, i) => i !== idx)
+                            setReportImages(newImages)
+                          }}
+                          className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Upload multiple images to help identify your item
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label htmlFor="alert-toggle" className="flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    Alert me if found
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Get notified automatically when someone finds a matching item
+                  </p>
+                </div>
+                <Switch
+                  id="alert-toggle"
+                  checked={alertEnabled}
+                  onCheckedChange={setAlertEnabled}
+                />
               </div>
 
               <Button type="submit" size="lg" className="w-full">
