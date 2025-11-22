@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
 
     // Security: Require minimum description length to prevent abuse
     const trimmedDescription = description.trim()
-    if (trimmedDescription.length < 15) {
+    if (trimmedDescription.length < 5) {
       return NextResponse.json({ 
-        error: 'Description must be at least 15 characters long. Please provide more details about your lost item.' 
+        error: 'Description must be at least 5 characters long. Please provide more details about your lost item.' 
       }, { status: 400 })
     }
 

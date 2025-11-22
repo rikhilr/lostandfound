@@ -55,10 +55,10 @@ export default function LostPage() {
     }
 
     // Security: Validate minimum length on frontend
-    if (trimmedDescription.length < 15) {
+    if (trimmedDescription.length < 5) {
       toast({
         title: "Description Too Short",
-        description: "Please provide at least 15 characters with more details about your lost item.",
+        description: "Please provide at least 5 characters with more details about your lost item.",
         variant: "destructive",
       })
       return
