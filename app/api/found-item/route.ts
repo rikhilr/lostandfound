@@ -75,9 +75,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save item' }, { status: 500 })
     }
 
+    // 6. Reverse Match: Check if this found item matches any reported lost items
+    const { data: matchingLostItems } = await supabaseAdmin.rpc(
+      'search_similar_lost_items',
+      {
+        query_embedding: combinedEmbedding,
+        match_threshold: 0.75, 
+        match_count: 3
+      }
+    )
+
+    // 7. Prepare response with match info
+    let matchAlert = null
+    
+    if (matchingLostItems && matchingLostItems.length > 0) {
+      const bestMatch = matchingLostItems[0]
+      
+      matchAlert = {
+        foundMatch: true,
+        message: `This matches a reported lost item!`,
+        matchId: bestMatch.id,
+        contactInfo: bestMatch.contact_info
+      }
+    }
+
     return NextResponse.json({
       success: true,
       item: dbData,
+      matchAlert
     })
   } catch (error) {
     console.error('Error in found-item API:', error)
@@ -87,4 +112,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
