@@ -10,24 +10,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Description is required' }, { status: 400 })
     }
 
+    // Security: Require minimum description length to prevent abuse
+    const trimmedDescription = description.trim()
+    if (trimmedDescription.length < 15) {
+      return NextResponse.json({ 
+        error: 'Description must be at least 15 characters long. Please provide more details about your lost item.' 
+      }, { status: 400 })
+    }
+
+    // Security: Require at least 2 meaningful words (filter out single words or very short queries)
+    const words = trimmedDescription.split(/\s+/).filter(word => word.length > 2)
+    if (words.length < 2) {
+      return NextResponse.json({ 
+        error: 'Please provide a more detailed description with at least 2 meaningful words.' 
+      }, { status: 400 })
+    }
+
     // 1. Generate embedding for the search query
     // Build a comprehensive search text similar to how found items are stored
     // Found items use: title + description + tags, so we should search with similar structure
     const searchText = location 
-      ? `${description} ${location}`.trim()
-      : description.trim()
+      ? `${trimmedDescription} ${location}`.trim()
+      : trimmedDescription
     
     console.log('Search query:', searchText)
     const queryEmbedding = await getTextEmbedding(searchText)
     console.log('Embedding generated, length:', queryEmbedding.length)
 
-    // 2. Try with a lower threshold first (more lenient matching)
-    let matchThreshold = 0.5 // Start with 50% similarity (more lenient)
+    // 2. Try with stricter thresholds to prevent overly broad matches
+    // Security: Use higher thresholds to prevent fishing/abuse
+    let matchThreshold = 0.65 // Start with 65% similarity (stricter)
     let results: any[] = []
     let searchError: any = null
 
-    // Try multiple thresholds if no results
-    for (const threshold of [0.5, 0.4, 0.3]) {
+    // Try multiple thresholds if no results (but keep them reasonably high)
+    for (const threshold of [0.65, 0.6, 0.55]) {
       const { data, error } = await supabaseAdmin.rpc(
         'search_similar_items',
         {
@@ -65,14 +82,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Search failed' }, { status: 500 })
       }
 
-      // Simple text matching fallback
+      // Simple text matching fallback with stricter requirements
+      // Security: Require multiple words to match, not just one
       const searchWords = searchText.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+      
+      // Security: Require at least 2 words to match for text fallback
+      if (searchWords.length < 2) {
+        return NextResponse.json({ results: [] })
+      }
+      
       const filtered = (fallbackResults || [])
         ?.filter((item) => {
           const itemText = `${item.auto_title || ''} ${item.auto_description || ''} ${(item.tags || []).join(' ')}`.toLowerCase()
-          // Match if any significant word appears
-          return searchWords.some(word => itemText.includes(word)) || 
-                 itemText.includes(searchText.toLowerCase())
+          // Security: Require at least 2 words to match (not just one)
+          const matchingWords = searchWords.filter(word => itemText.includes(word))
+          return matchingWords.length >= 2
         })
         .slice(0, 10)
         .map((item: any) => ({
