@@ -4,10 +4,11 @@ import { useState } from 'react'
 import ResultCard from '@/components/ResultCard'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { Search, Sparkles, AlertCircle } from 'lucide-react'
+import { Search, Sparkles, AlertCircle, FileText, MapPin } from 'lucide-react'
 
 interface SearchResult {
   id: string
@@ -22,10 +23,21 @@ interface SearchResult {
 
 export default function LostPage() {
   const { toast } = useToast()
+  
+  // Search State
   const [description, setDescription] = useState('')
+  const [searchLocation, setSearchLocation] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
+  
+  // Claim State
   const [claimStatus, setClaimStatus] = useState<{ [key: string]: 'success' | 'error' | null }>({})
+
+  // Report State
+  const [showReportForm, setShowReportForm] = useState(false)
+  const [reportDescription, setReportDescription] = useState('')
+  const [reportLocation, setReportLocation] = useState('')
+  const [contactInfo, setContactInfo] = useState('')
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,7 +60,10 @@ export default function LostPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ description }),
+        body: JSON.stringify({ 
+          description,
+          location: searchLocation 
+        }),
       })
 
       const data = await response.json()
@@ -61,7 +76,7 @@ export default function LostPage() {
       if (data.results?.length === 0) {
         toast({
           title: "No Matches Found",
-          description: "Try a more detailed description to improve results",
+          description: "Try a more detailed description or report your item as lost.",
           variant: "default",
         })
       } else {
@@ -78,6 +93,49 @@ export default function LostPage() {
       })
     } finally {
       setIsSearching(false)
+    }
+  }
+
+  const handleReportLost = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!reportDescription || !contactInfo) {
+      toast({
+        title: "Missing Information",
+        description: "Description and contact info are required.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch('/api/report-lost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          description: reportDescription, 
+          location: reportLocation,
+          contactInfo 
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to report item')
+
+      toast({
+        title: "Item Reported",
+        description: "We'll notify you if a matching item is found!",
+      })
+      setShowReportForm(false)
+      // Reset form
+      setReportDescription('')
+      setReportLocation('')
+      setContactInfo('')
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Could not report item. Please try again.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -119,65 +177,144 @@ export default function LostPage() {
     <div className="container max-w-7xl py-12 md:py-24">
       <div className="mb-8 text-center">
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl mb-4">
-          Search for Lost Item
+          {showReportForm ? 'Report Lost Item' : 'Search for Lost Item'}
         </h1>
         <p className="text-lg text-muted-foreground">
-          Describe what you lost and let AI find it for you
+          {showReportForm 
+            ? 'Tell us what you lost so we can notify you when it\'s found'
+            : 'Describe what you lost and let AI find it for you'}
         </p>
       </div>
 
       <Card className="border-2 mb-12">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Search className="h-5 w-5" />
-            Item Description
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              {showReportForm ? <FileText className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+              {showReportForm ? 'Item Details' : 'Search Description'}
+            </CardTitle>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowReportForm(!showReportForm)
+                setResults([])
+              }}
+              className="gap-2"
+            >
+              {showReportForm ? "Back to Search" : "Report Missing Item"}
+            </Button>
+          </div>
           <CardDescription>
-            Be as detailed as possible. Our AI will match your description to found items using advanced embeddings.
+            {showReportForm
+              ? "Create a persistent report. We'll assume you've already searched above."
+              : "Be as detailed as possible. Our AI will match your description to found items."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSearch} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="description">Describe Your Lost Item</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g., A black leather wallet with a red stripe, containing a driver's license and credit cards. The wallet has a zipper closure and a small logo on the front..."
-                rows={6}
-                className="resize-none"
-                required
-              />
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Sparkles className="h-3 w-3" />
-                Include details like color, size, brand, unique features, and contents
-              </p>
-            </div>
+          {showReportForm ? (
+            <form onSubmit={handleReportLost} className="space-y-4 animate-fade-in">
+              <div className="space-y-2">
+                <Label htmlFor="report-desc">Item Description</Label>
+                <Textarea 
+                  id="report-desc" 
+                  value={reportDescription} 
+                  onChange={(e) => setReportDescription(e.target.value)}
+                  placeholder="e.g., A black leather wallet with a red stripe..."
+                  rows={4}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="report-location">Lost Location (Optional)</Label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="report-location"
+                    value={reportLocation}
+                    onChange={(e) => setReportLocation(e.target.value)}
+                    placeholder="e.g. Central Park, Cafe Nero..."
+                    className="pl-9"
+                  />
+                </div>
+              </div>
 
-            <Button
-              type="submit"
-              disabled={isSearching}
-              size="lg"
-              className="w-full"
-            >
-              {isSearching ? (
-                <>
-                  <Search className="mr-2 h-4 w-4 animate-pulse" />
-                  Searching with AI...
-                </>
-              ) : (
-                <>
-                  <Search className="mr-2 h-4 w-4" />
-                  Search for Matches
-                </>
-              )}
-            </Button>
-          </form>
+              <div className="space-y-2">
+                <Label htmlFor="contact">Contact Email/Phone</Label>
+                <Input 
+                  id="contact" 
+                  placeholder="email@example.com"
+                  value={contactInfo}
+                  onChange={(e) => setContactInfo(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  We'll use this to contact you if someone finds your item.
+                </p>
+              </div>
+
+              <Button type="submit" size="lg" className="w-full">
+                <FileText className="mr-2 h-4 w-4" />
+                Submit Lost Item Report
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="description">Describe Your Lost Item</Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g., A black leather wallet with a red stripe, containing a driver's license..."
+                  rows={5}
+                  className="resize-none"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="search-location">Location Lost (Optional)</Label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="search-location"
+                    value={searchLocation}
+                    onChange={(e) => setSearchLocation(e.target.value)}
+                    placeholder="e.g. Central Park, Subway..."
+                    className="pl-9"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  Adding a location helps AI filter relevant items
+                </p>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isSearching}
+                size="lg"
+                className="w-full"
+              >
+                {isSearching ? (
+                  <>
+                    <Search className="mr-2 h-4 w-4 animate-pulse" />
+                    Searching with AI...
+                  </>
+                ) : (
+                  <>
+                    <Search className="mr-2 h-4 w-4" />
+                    Search for Matches
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
 
-      {results.length > 0 && (
+      {results.length > 0 && !showReportForm && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex items-center justify-between">
             <h2 className="text-3xl font-bold tracking-tight">
@@ -201,18 +338,20 @@ export default function LostPage() {
         </div>
       )}
 
-      {results.length === 0 && !isSearching && (
+      {results.length === 0 && !isSearching && !showReportForm && (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No search results yet</h3>
-            <p className="text-sm text-muted-foreground text-center max-w-md">
-              Enter a detailed description above and click search to find matching items
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+              Enter a detailed description above and click search to find matching items.
             </p>
+            <Button variant="outline" onClick={() => setShowReportForm(true)}>
+              Report Missing Item
+            </Button>
           </CardContent>
         </Card>
       )}
     </div>
   )
 }
-

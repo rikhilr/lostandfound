@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { Upload, Sparkles, MapPin } from 'lucide-react'
+import { Upload, Sparkles, MapPin, AlertCircle } from 'lucide-react'
 
 export default function FoundPage() {
   const router = useRouter()
@@ -56,14 +56,35 @@ export default function FoundPage() {
         throw new Error(data.error || 'Failed to submit item')
       }
 
-      toast({
-        title: "Success!",
-        description: "Your found item has been submitted. Our AI is analyzing it now.",
-      })
+      if (data.matchAlert && data.matchAlert.foundMatch) {
+        // Toast for Match Found (No Bounty)
+        toast({
+          title: "MATCH FOUND! 🎉",
+          description: (
+            <div className="mt-2 rounded-md bg-green-50 p-3 border border-green-200 dark:bg-green-900/20 dark:border-green-800">
+              <div className="flex items-center gap-2 font-bold text-green-800 dark:text-green-200 mb-1">
+                <AlertCircle className="h-4 w-4" />
+                Reported Missing!
+              </div>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                Someone has reported this item as lost.
+                <br />
+                <span className="font-medium mt-1 block">Contact: {data.matchAlert.contactInfo}</span>
+              </p>
+            </div>
+          ),
+          duration: 10000, 
+        })
+      } else {
+        toast({
+          title: "Success!",
+          description: "Your found item has been submitted. Our AI is analyzing it now.",
+        })
+      }
 
       setTimeout(() => {
         router.push('/')
-      }, 1500)
+      }, data.matchAlert ? 4000 : 1500)
     } catch (err) {
       toast({
         title: "Error",
@@ -157,4 +178,3 @@ export default function FoundPage() {
     </div>
   )
 }
-

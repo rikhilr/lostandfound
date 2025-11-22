@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS items_found (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create lost items table (Standard Report, no bounty)
+CREATE TABLE IF NOT EXISTS items_lost (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  description TEXT NOT NULL,
+  location TEXT,
+  contact_info TEXT NOT NULL,
+  embedding vector(1536),
+  status TEXT DEFAULT 'active', -- 'active', 'found', 'expired'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create claims table
 CREATE TABLE IF NOT EXISTS item_claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -27,8 +38,13 @@ CREATE TABLE IF NOT EXISTS item_claims (
   FOREIGN KEY (item_id) REFERENCES items_found(id)
 );
 
--- Create index on embedding for vector similarity search
+-- Create index on embedding for vector similarity search (Found Items)
 CREATE INDEX IF NOT EXISTS items_found_embedding_idx ON items_found 
+USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- Create index on embedding for vector similarity search (Lost Items)
+CREATE INDEX IF NOT EXISTS items_lost_embedding_idx ON items_lost 
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 
@@ -38,7 +54,7 @@ CREATE INDEX IF NOT EXISTS items_found_claimed_idx ON items_found(claimed);
 -- Create index on created_at for sorting
 CREATE INDEX IF NOT EXISTS items_found_created_at_idx ON items_found(created_at DESC);
 
--- Create function for vector similarity search
+-- Function for vector similarity search (Search Found Items)
 CREATE OR REPLACE FUNCTION search_similar_items(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.7,
@@ -79,6 +95,39 @@ BEGIN
 END;
 $$;
 
+-- Function to search for lost items similar to a found item (Reverse Match)
+CREATE OR REPLACE FUNCTION search_similar_lost_items(
+  query_embedding vector(1536),
+  match_threshold float DEFAULT 0.7,
+  match_count int DEFAULT 5
+)
+RETURNS TABLE (
+  id UUID,
+  description TEXT,
+  location TEXT,
+  contact_info TEXT,
+  similarity float,
+  created_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    items_lost.id,
+    items_lost.description,
+    items_lost.location,
+    items_lost.contact_info,
+    1 - (items_lost.embedding <=> query_embedding) AS similarity,
+    items_lost.created_at
+  FROM items_lost
+  WHERE items_lost.status = 'active'
+    AND 1 - (items_lost.embedding <=> query_embedding) > match_threshold
+  ORDER BY items_lost.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
 -- Create updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -92,14 +141,3 @@ CREATE TRIGGER update_items_found_updated_at
   BEFORE UPDATE ON items_found
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
-
--- Create storage bucket for found items images
--- Note: Run this in Supabase Dashboard > Storage or via Supabase CLI
--- INSERT INTO storage.buckets (id, name, public) VALUES ('found-items', 'found-items', true);
-
--- Set up storage policies (run these after creating the bucket)
--- Allow public read access
--- CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'found-items');
--- Allow authenticated users to upload
--- CREATE POLICY "Authenticated Upload" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'found-items' AND auth.role() = 'authenticated');
-
