@@ -16,7 +16,7 @@ export interface ImageAnalysis {
  */
 export async function analyzeImage(imageUrl: string): Promise<ImageAnalysis> {
   const response = await openai.chat.completions.create({
-    model: 'gpt-4-vision-preview',
+    model: 'gpt-4.1',
     messages: [
       {
         role: 'user',
