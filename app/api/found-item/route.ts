@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
-import { analyzeImage } from '@/lib/openai/vision'
+import { analyzeMultipleImages } from '@/lib/openai/vision'
 import { getImageEmbedding, getTextEmbedding, combineEmbeddings } from '@/lib/openai/embeddings'
 
 export async function POST(request: NextRequest) {
@@ -58,18 +58,27 @@ export async function POST(request: NextRequest) {
       imageUrls.push(urlData.publicUrl)
     }
 
-    // 2. Analyze first image with OpenAI Vision (use primary image for AI analysis)
-    const primaryImageUrl = imageUrls[0]
-    const analysis = await analyzeImage(primaryImageUrl)
+    // 2. Analyze ALL images with OpenAI Vision for comprehensive matching
+    const analysis = await analyzeMultipleImages(imageUrls)
 
-    // 4. Generate embeddings
-    const imageEmbedding = await getImageEmbedding(analysis.description)
+    // 3. Generate embeddings from comprehensive image analysis
+    // Image embedding focuses on visual features
+    const imageEmbedding = await getImageEmbedding({
+      description: analysis.description,
+      tags: analysis.tags
+    })
+    
+    // Text embedding from structured metadata
     const textEmbedding = await getTextEmbedding(
       `${analysis.title} ${analysis.description} ${analysis.tags.join(' ')}`
     )
-    const combinedEmbedding = combineEmbeddings(imageEmbedding, textEmbedding)
+    
+    // Combine both for better matching (weighted: 60% image, 40% text)
+    const combinedEmbedding = imageEmbedding.map((val, idx) => 
+      (val * 0.6) + (textEmbedding[idx] * 0.4)
+    )
 
-    // 3. Insert into database
+    // 4. Insert into database
     const { data: dbData, error: dbError } = await supabaseAdmin
       .from('items_found')
       .insert({
@@ -94,7 +103,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save item' }, { status: 500 })
     }
 
-    // 4. Reverse Match: Check if this found item matches any reported lost items with alerts enabled
+    // 5. Reverse Match: Check if this found item matches any reported lost items with alerts enabled
     const { data: matchingLostItems } = await supabaseAdmin.rpc(
       'search_similar_lost_items',
       {
@@ -104,7 +113,7 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    // 5. Prepare response with match info
+    // 6. Prepare response with match info
     let matchAlert = null
     
     if (matchingLostItems && matchingLostItems.length > 0) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
-import { getTextEmbedding } from '@/lib/openai/embeddings'
+import { getTextEmbedding, getImageEmbedding, combineEmbeddings } from '@/lib/openai/embeddings'
+import { analyzeMultipleImages } from '@/lib/openai/vision'
 
 export async function POST(request: NextRequest) {
   try {
@@ -50,12 +51,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Generate embedding for the lost item description
-    const textToEmbed = location 
-      ? `${description} Lost in: ${location}` 
-      : description
+    // 2. Generate embedding for the lost item
+    let embedding: number[]
+    
+    if (imageUrls.length > 0) {
+      // If images are provided, analyze them and create visual embeddings
+      const imageAnalysis = await analyzeMultipleImages(imageUrls)
       
-    const embedding = await getTextEmbedding(textToEmbed)
+      // Create image embedding from visual analysis
+      const imageEmbedding = await getImageEmbedding({
+        description: imageAnalysis.description,
+        tags: imageAnalysis.tags
+      })
+      
+      // Create text embedding from description
+      const textToEmbed = location 
+        ? `${description} Lost in: ${location}` 
+        : description
+      const textEmbedding = await getTextEmbedding(textToEmbed)
+      
+      // Combine: 60% image features, 40% text description
+      embedding = imageEmbedding.map((val, idx) => 
+        (val * 0.6) + (textEmbedding[idx] * 0.4)
+      )
+    } else {
+      // No images, just use text description
+      const textToEmbed = location 
+        ? `${description} Lost in: ${location}` 
+        : description
+      embedding = await getTextEmbedding(textToEmbed)
+    }
 
     // 3. Insert into items_lost table
     const { data, error } = await supabaseAdmin

@@ -13,14 +13,13 @@ export async function getTextEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * Generates an embedding vector for an image using OpenAI's Vision API
- * We use the image description to create a text embedding
+ * Generates an embedding vector directly from image analysis
+ * Creates a comprehensive embedding from visual description
  */
-export async function getImageEmbedding(imageDescription: string): Promise<number[]> {
-  // For images, we generate embeddings from the description
-  // In a more advanced setup, you could use a vision-language model
-  const combinedText = `Image: ${imageDescription}`
-  return getTextEmbedding(combinedText)
+export async function getImageEmbedding(imageAnalysis: { description: string; tags: string[] }): Promise<number[]> {
+  // Create a rich text representation focusing on visual features
+  const visualDescription = `Visual item: ${imageAnalysis.description}. Features: ${imageAnalysis.tags.join(', ')}. Colors, materials, brand, size, shape, condition, unique marks.`
+  return getTextEmbedding(visualDescription)
 }
 
 /**
