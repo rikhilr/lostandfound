@@ -102,6 +102,13 @@ export default function FoundPage() {
               <Label htmlFor="image">Upload Photo</Label>
               <ImageUpload
                 onImageSelect={(file) => setImageFile(file)}
+                onLocationDetected={(detectedLocation) => {
+                  setLocation(detectedLocation)
+                  toast({
+                    title: "Location detected",
+                    description: `Found location from image: ${detectedLocation}`,
+                  })
+                }}
                 currentImage={imageFile ? URL.createObjectURL(imageFile) : null}
               />
               <p className="text-xs text-muted-foreground flex items-center gap-1">
