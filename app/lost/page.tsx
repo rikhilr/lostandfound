@@ -103,10 +103,25 @@ export default function LostPage() {
           })
 
           if (alertResponse.ok) {
-            toast({
-              title: "Alert Set! 🔔",
-              description: "We'll notify you if someone finds a matching item.",
-            })
+            const alertData = await alertResponse.json()
+            const notificationUrl = alertData.notificationUrl
+            
+            if (notificationUrl) {
+              // Copy URL to clipboard
+              const fullUrl = `${window.location.origin}${notificationUrl}`
+              navigator.clipboard.writeText(fullUrl).catch(() => {})
+              
+              toast({
+                title: "Alert Set! 🔔",
+                description: `We'll notify you if someone finds a matching item. Your notification link has been copied to clipboard - save it to check for matches!`,
+                duration: 10000,
+              })
+            } else {
+              toast({
+                title: "Alert Set! 🔔",
+                description: "We'll notify you if someone finds a matching item.",
+              })
+            }
           }
         } catch (alertErr) {
           console.error('Failed to set alert:', alertErr)

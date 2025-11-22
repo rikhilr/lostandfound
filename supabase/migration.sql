@@ -22,12 +22,20 @@ WHERE contact_info IS NULL;
 ALTER TABLE items_found 
 DROP COLUMN IF EXISTS proof_question;
 
--- 3. Add image_urls and alert_enabled to items_lost if they don't exist
+-- 3. Add image_urls, alert_enabled, and status to items_lost if they don't exist
 ALTER TABLE items_lost 
 ADD COLUMN IF NOT EXISTS image_urls TEXT[] DEFAULT '{}';
 
 ALTER TABLE items_lost 
 ADD COLUMN IF NOT EXISTS alert_enabled BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE items_lost 
+ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+
+-- Set status to 'active' for existing rows that don't have a status
+UPDATE items_lost 
+SET status = 'active' 
+WHERE status IS NULL;
 
 -- 4. Update item_claims table
 ALTER TABLE item_claims 

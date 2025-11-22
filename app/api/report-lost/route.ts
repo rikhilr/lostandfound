@@ -82,7 +82,12 @@ export async function POST(request: NextRequest) {
       embedding = await getTextEmbedding(textToEmbed)
     }
 
-    // 3. Insert into items_lost table
+    // 3. Generate notification token if alert is enabled
+    const notificationToken = alertEnabled 
+      ? `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`
+      : null
+
+    // 4. Insert into items_lost table
     const { data, error } = await supabaseAdmin
       .from('items_lost')
       .insert({
@@ -91,6 +96,7 @@ export async function POST(request: NextRequest) {
         contact_info: contactInfo,
         image_urls: imageUrls,
         alert_enabled: alertEnabled,
+        notification_token: notificationToken,
         embedding,
         status: 'active'
       })
@@ -102,7 +108,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to report lost item' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, item: data })
+    return NextResponse.json({ 
+      success: true, 
+      item: data,
+      notificationToken: notificationToken,
+      notificationUrl: notificationToken ? `/notify/${notificationToken}` : null
+    })
 
   } catch (error) {
     console.error('Error in report-lost API:', error)

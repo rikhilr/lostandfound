@@ -104,16 +104,118 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Reverse Match: Check if this found item matches any reported lost items with alerts enabled
-    const { data: matchingLostItems } = await supabaseAdmin.rpc(
-      'search_similar_lost_items',
-      {
-        query_embedding: combinedEmbedding,
-        match_threshold: 0.75, 
-        match_count: 3
+    // Use the same lenient thresholds as search-lost for consistency
+    let matchingLostItems: any[] = []
+    let matchThreshold = 0.5
+    
+    console.log('Checking for matching lost items with alerts enabled...')
+    console.log('Using combined embedding (60% image, 40% text)')
+    
+    // Try multiple thresholds (same as search-lost)
+    // First try with the combined embedding (works best for lost items with images)
+    for (const threshold of [0.5, 0.4, 0.3]) {
+      const { data, error } = await supabaseAdmin.rpc(
+        'search_similar_lost_items',
+        {
+          query_embedding: combinedEmbedding,
+          match_threshold: threshold,
+          match_count: 5
+        }
+      )
+      
+      if (error) {
+        console.error('Error searching for lost items:', error)
+        break
       }
-    )
+      
+      if (data && data.length > 0) {
+        matchingLostItems = data
+        matchThreshold = threshold
+        console.log(`Found ${data.length} matching lost item(s) with combined embedding at threshold ${threshold}`)
+        break
+      }
+    }
+    
+    // If no matches with combined embedding, try with just text embedding
+    // This helps match text-only lost items (no images provided)
+    if (matchingLostItems.length === 0) {
+      console.log('No matches with combined embedding, trying text-only embedding...')
+      
+      for (const threshold of [0.5, 0.4, 0.3]) {
+        const { data, error } = await supabaseAdmin.rpc(
+          'search_similar_lost_items',
+          {
+            query_embedding: textEmbedding,
+            match_threshold: threshold,
+            match_count: 5
+          }
+        )
+        
+        if (error) {
+          console.error('Error searching for lost items with text embedding:', error)
+          break
+        }
+        
+        if (data && data.length > 0) {
+          matchingLostItems = data
+          matchThreshold = threshold
+          console.log(`Found ${data.length} matching lost item(s) with text embedding at threshold ${threshold}`)
+          break
+        }
+      }
+    }
+    
+    if (matchingLostItems.length === 0) {
+      console.log('No matching lost items found with alerts enabled after trying both embeddings')
+    }
 
-    // 6. Prepare response with match info
+    // 6. Create match notifications for each matching lost item
+    const notificationUrls: string[] = []
+    
+    if (matchingLostItems && matchingLostItems.length > 0) {
+      console.log(`Processing ${matchingLostItems.length} matching lost item(s)...`)
+      
+      for (const lostItem of matchingLostItems) {
+        console.log(`Processing lost item ${lostItem.id}, similarity: ${lostItem.similarity}`)
+        
+        // Get the notification token for this lost item
+        const { data: lostItemData, error: lostItemError } = await supabaseAdmin
+          .from('items_lost')
+          .select('notification_token, description')
+          .eq('id', lostItem.id)
+          .single()
+
+        if (lostItemError) {
+          console.error('Error fetching lost item data:', lostItemError)
+          continue
+        }
+
+        if (lostItemData?.notification_token) {
+          console.log(`Creating notification for lost item ${lostItem.id} with token ${lostItemData.notification_token.substring(0, 20)}...`)
+          
+          // Create a match notification
+          const { error: notifError } = await supabaseAdmin
+            .from('match_notifications')
+            .insert({
+              lost_item_id: lostItem.id,
+              found_item_id: dbData.id,
+              notification_token: lostItemData.notification_token,
+              viewed: false
+            })
+
+          if (notifError) {
+            console.error('Error creating notification:', notifError)
+          } else {
+            console.log(`Notification created successfully for lost item ${lostItem.id}`)
+            notificationUrls.push(`/notify/${lostItemData.notification_token}`)
+          }
+        } else {
+          console.warn(`Lost item ${lostItem.id} has no notification token`)
+        }
+      }
+    }
+
+    // 7. Prepare response with match info
     let matchAlert = null
     
     if (matchingLostItems && matchingLostItems.length > 0) {
@@ -123,7 +225,8 @@ export async function POST(request: NextRequest) {
         foundMatch: true,
         message: `This matches a reported lost item!`,
         matchId: bestMatch.id,
-        contactInfo: bestMatch.contact_info
+        contactInfo: bestMatch.contact_info,
+        notificationUrls: notificationUrls
       }
     }
 
