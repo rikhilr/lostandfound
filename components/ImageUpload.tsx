@@ -1,9 +1,13 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Upload, X, Camera, CameraOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Camera, Upload, X, MapPin, Loader2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+// @ts-ignore
+import exifr from 'exifr'
 
 interface ImageUploadProps {
   onImageSelect: (file: File) => void
@@ -13,80 +17,146 @@ interface ImageUploadProps {
 
 export default function ImageUpload({ onImageSelect, onLocationDetected, currentImage }: ImageUploadProps) {
   const [preview, setPreview] = useState<string | null>(currentImage || null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [isCameraMode, setIsCameraMode] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [locationStatus, setLocationStatus] = useState<string>('')
+  const [showCamera, setShowCamera] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  const logToServer = async (message: string, data?: any) => {
+    try {
+      await fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, data }),
+      })
+    } catch (error) {
+      console.error('Failed to log to server:', error)
+    }
+  }
+
   const reverseGeocode = async (lat: number, lon: number): Promise<string | null> => {
     try {
-      // Use OpenStreetMap Nominatim API (free, no API key needed)
+      await logToServer('Reverse geocoding', { lat, lon })
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`,
-        {
-          headers: {
-            'User-Agent': 'LostAndFoundApp/1.0' // Required by Nominatim
-          }
-        }
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`
       )
-      
-      if (!response.ok) return null
-      
       const data = await response.json()
-      if (data.address) {
-        const parts: string[] = []
-        if (data.address.road) parts.push(data.address.road)
-        if (data.address.suburb || data.address.neighbourhood) {
-          parts.push(data.address.suburb || data.address.neighbourhood)
-        }
-        if (data.address.city || data.address.town || data.address.village) {
-          parts.push(data.address.city || data.address.town || data.address.village)
-        }
-        if (data.address.state) parts.push(data.address.state)
-        
-        return parts.length > 0 ? parts.join(', ') : `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+      await logToServer('Reverse geocoding response', { hasDisplayName: !!data.display_name, displayName: data.display_name })
+      if (data.display_name) {
+        return data.display_name
       }
-      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+      return null
     } catch (error) {
+      await logToServer('Reverse geocoding error', { error: String(error) })
       console.error('Reverse geocoding error:', error)
       return null
     }
   }
 
-  const extractLocationFromImage = async (file: File) => {
+  const extractLocationFromImage = async (file: File): Promise<string | null> => {
     try {
-      // Dynamically import exifr to avoid SSR issues
-      // @ts-ignore - exifr types may not be available
-      const exifrModule = await import('exifr').catch(() => null)
-      if (!exifrModule) {
-        return
+      await logToServer('Starting EXIF extraction', { fileName: file.name, fileSize: file.size, fileType: file.type })
+      
+      // Try multiple EXIF parsing strategies
+      let exifData: any = null
+      
+      // Strategy 1: Parse with GPS focus
+      try {
+        exifData = await exifr.parse(file, { gps: true })
+        await logToServer('EXIF parse (GPS focus)', { 
+          hasData: !!exifData,
+          hasLat: !!exifData?.latitude,
+          hasLon: !!exifData?.longitude
+        })
+      } catch (e) {
+        await logToServer('EXIF parse (GPS focus) failed', { error: String(e) })
       }
       
-      // Handle both default and named exports
-      const exifr = exifrModule.default || exifrModule
-      if (!exifr || typeof exifr.parse !== 'function') {
-        return
-      }
-      
-      const exifData = await exifr.parse(file, {
-        gps: true,
-        translateKeys: false,
-        translateValues: false,
-        reviveValues: true
-      })
-
-      if (exifData?.latitude && exifData?.longitude) {
-        const location = await reverseGeocode(exifData.latitude, exifData.longitude)
-        if (location && onLocationDetected) {
-          onLocationDetected(location)
+      // Strategy 2: If no GPS, try full parse
+      if (!exifData?.latitude || !exifData?.longitude) {
+        try {
+          const fullExif = await exifr.parse(file)
+          await logToServer('EXIF full parse', { 
+            hasData: !!fullExif,
+            keys: fullExif ? Object.keys(fullExif) : [],
+            hasLat: !!fullExif?.latitude,
+            hasLon: !!fullExif?.longitude,
+            hasGPS: !!fullExif?.GPS
+          })
+          
+          // Check if GPS data is nested
+          if (fullExif?.GPS?.latitude && fullExif?.GPS?.longitude) {
+            exifData = {
+              latitude: fullExif.GPS.latitude,
+              longitude: fullExif.GPS.longitude
+            }
+            await logToServer('Found GPS in nested structure', { lat: exifData.latitude, lon: exifData.longitude })
+          } else if (fullExif?.latitude && fullExif?.longitude) {
+            exifData = fullExif
+          }
+        } catch (e) {
+          await logToServer('EXIF full parse failed', { error: String(e) })
         }
       }
+      
+      await logToServer('Final EXIF check', { 
+        hasExifData: !!exifData,
+        hasLat: !!exifData?.latitude,
+        hasLon: !!exifData?.longitude,
+        lat: exifData?.latitude,
+        lon: exifData?.longitude
+      })
+      
+      if (exifData?.latitude && exifData?.longitude) {
+        const location = await reverseGeocode(exifData.latitude, exifData.longitude)
+        return location
+      }
+      
+      await logToServer('No GPS data found in EXIF after all attempts')
+      return null
     } catch (error) {
-      console.error('Error extracting location from image:', error)
-      // Silently fail - location extraction is optional
+      await logToServer('EXIF extraction error', { error: String(error) })
+      console.error('EXIF extraction error:', error)
+      return null
     }
+  }
+
+  const getCurrentLocation = async (): Promise<string | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        logToServer('Geolocation not available')
+        resolve(null)
+        return
+      }
+
+      logToServer('Requesting geolocation')
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          await logToServer('Geolocation success', { 
+            lat: position?.coords?.latitude, 
+            lon: position?.coords?.longitude 
+          })
+          if (position?.coords) {
+            const location = await reverseGeocode(position.coords.latitude, position.coords.longitude)
+            resolve(location)
+          } else {
+            resolve(null)
+          }
+        },
+        async (error) => {
+          await logToServer('Geolocation error', { 
+            code: error.code, 
+            message: error.message 
+          })
+          resolve(null)
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      )
+    })
   }
 
   const handleFileChange = async (file: File) => {
@@ -99,41 +169,67 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
       return
     }
 
+    setIsProcessing(true)
+    setLocationStatus('Processing image...')
+
+    // Show preview
     const reader = new FileReader()
     reader.onloadend = () => {
       setPreview(reader.result as string)
     }
     reader.readAsDataURL(file)
     onImageSelect(file)
+
+    // Try to extract location - EXIF first, then geolocation
+    let location: string | null = null
     
-    // Try to extract location from EXIF data
-    await extractLocationFromImage(file)
+    // 1. Try EXIF data first
+    await logToServer('Step 1: Trying EXIF extraction')
+    location = await extractLocationFromImage(file)
+    await logToServer('After EXIF extraction', { location })
+    
+    // 2. If no location from EXIF, try current device location
+    if (!location) {
+      await logToServer('Step 2: Trying device geolocation (EXIF failed)')
+      location = await getCurrentLocation()
+      await logToServer('After geolocation', { location })
+    }
+
+    if (location && onLocationDetected) {
+      await logToServer('Location detected successfully', { location })
+      onLocationDetected(location)
+      setLocationStatus(`Location detected: ${location}`)
+    } else {
+      await logToServer('Location detection failed - both methods failed')
+      setLocationStatus('Location not detected - please enter manually')
+    }
+    
+    setIsProcessing(false)
+  }
+
+  const isMobile = () => {
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   }
 
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment', // Prefer back camera on mobile
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
+        video: { facingMode: 'environment' },
+        audio: false
       })
       setStream(mediaStream)
-      setIsCameraMode(true)
+      setShowCamera(true)
       
-      // Wait for next tick to ensure video element is rendered
+      // Wait for video element to be ready
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream
-          videoRef.current.play().catch((error) => {
-            console.error('Error playing video:', error)
-          })
+          videoRef.current.play()
         }
       }, 100)
     } catch (error) {
       console.error('Error accessing camera:', error)
-      alert('Unable to access camera. Please check your permissions or use file upload instead.')
+      alert('Unable to access camera. Please check permissions or use Upload Photo instead.')
     }
   }
 
@@ -142,13 +238,13 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
       stream.getTracks().forEach(track => track.stop())
       setStream(null)
     }
-    setIsCameraMode(false)
+    setShowCamera(false)
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
   }
 
-  const capturePhoto = async () => {
+  const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return
 
     const video = videoRef.current
@@ -162,72 +258,55 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     canvas.height = video.videoHeight
 
     // Draw video frame to canvas
-    context.drawImage(video, 0, 0)
-
-    // Try to get current location from geolocation API as fallback
-    let locationFromGPS: string | null = null
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        })
-      })
-      
-      if (position.coords) {
-        locationFromGPS = await reverseGeocode(
-          position.coords.latitude,
-          position.coords.longitude
-        )
-      }
-    } catch (error) {
-      // Geolocation failed or denied - that's okay, we'll try EXIF
-      console.log('Geolocation not available:', error)
-    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
 
     // Convert canvas to blob, then to File
     canvas.toBlob(async (blob) => {
       if (!blob) return
 
-      const file = new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' })
+      // Create a File from the blob
+      const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
       
-      // If we got location from GPS, use it immediately
-      if (locationFromGPS && onLocationDetected) {
-        onLocationDetected(locationFromGPS)
-      }
-      
-      await handleFileChange(file)
+      // Stop camera
       stopCamera()
-    }, 'image/jpeg', 0.9)
+      
+      // Process the captured photo
+      await handleFileChange(file)
+    }, 'image/jpeg', 0.95)
   }
 
-  // Handle video element when camera mode is active
-  useEffect(() => {
-    if (isCameraMode && videoRef.current && stream) {
-      const video = videoRef.current
-      video.srcObject = stream
-      
-      const playVideo = async () => {
-        try {
-          await video.play()
-        } catch (error) {
-          console.error('Error playing video stream:', error)
+  const handleClick = async (useCamera: boolean) => {
+    if (useCamera) {
+      if (isMobile()) {
+        // On mobile, use file input with capture
+        if (cameraInputRef.current) {
+          cameraInputRef.current.click()
         }
+      } else {
+        // On desktop, use getUserMedia for live camera
+        await startCamera()
       }
-      
-      playVideo()
-      
-      // Cleanup on unmount or when stream changes
-      return () => {
-        if (video.srcObject) {
-          video.srcObject = null
-        }
+    } else {
+      // Upload photo
+      if (uploadInputRef.current) {
+        uploadInputRef.current.click()
       }
     }
-  }, [isCameraMode, stream])
+  }
 
-  // Cleanup camera stream on unmount
+  const handleRemove = () => {
+    stopCamera()
+    setPreview(null)
+    setLocationStatus('')
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = ''
+    }
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = ''
+    }
+  }
+
+  // Cleanup stream on unmount
   useEffect(() => {
     return () => {
       if (stream) {
@@ -236,93 +315,39 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     }
   }, [stream])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      handleFileChange(file)
-    }
-  }
-
-  const handleClick = () => {
-    fileInputRef.current?.click()
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = () => {
-    setIsDragging(false)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) {
-      handleFileChange(file)
-    }
-  }
-
-  const handleRemove = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setPreview(null)
-    stopCamera()
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
-
-  const handleModeSwitch = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (isCameraMode) {
-      stopCamera()
-    } else {
-      startCamera()
-    }
-  }
-
   return (
-    <div className="w-full space-y-3">
+    <div className="w-full space-y-4">
+      {/* Camera input - always uses capture attribute */}
       <input
         type="file"
-        ref={fileInputRef}
-        onChange={handleInputChange}
+        ref={cameraInputRef}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            handleFileChange(file)
+          }
+        }}
         accept="image/*"
         capture="environment"
         className="hidden"
       />
-      <canvas ref={canvasRef} className="hidden" />
-      
-      {/* Mode selector buttons */}
-      {!preview && !isCameraMode && (
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleModeSwitch}
-            className="flex-1"
-          >
-            <Camera className="mr-2 h-4 w-4" />
-            Take Photo
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClick}
-            className="flex-1"
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            Upload File
-          </Button>
-        </div>
-      )}
+      {/* Upload input - no capture attribute */}
+      <input
+        type="file"
+        ref={uploadInputRef}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            handleFileChange(file)
+          }
+        }}
+        accept="image/*"
+        className="hidden"
+      />
 
-      {/* Camera mode */}
-      {isCameraMode && !preview && (
-        <div className="space-y-4">
-          <div className="relative border-2 border-dashed rounded-lg overflow-hidden bg-black aspect-video">
+      {showCamera ? (
+        <Card className="border-2 overflow-hidden">
+          <div className="relative aspect-video w-full bg-black rounded-t-lg overflow-hidden">
             <video
               ref={videoRef}
               autoPlay
@@ -330,109 +355,134 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
               muted
               className="w-full h-full object-cover"
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2 bg-background/80 hover:bg-background"
-              onClick={handleModeSwitch}
-            >
-              <CameraOff className="h-4 w-4" />
-            </Button>
+            <canvas ref={canvasRef} className="hidden" />
           </div>
-          <div className="flex gap-2">
+          <div className="p-4 space-y-3 border-t">
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={capturePhoto}
+                className="flex-1"
+                size="lg"
+              >
+                <Camera className="mr-2 h-5 w-5" />
+                Capture Photo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={stopCamera}
+                size="lg"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : !preview ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
             <Button
               type="button"
               variant="outline"
-              onClick={handleModeSwitch}
-              className="flex-1"
+              onClick={() => handleClick(true)}
+              className={cn(
+                "h-32 flex-col gap-3 border-2 transition-all",
+                "hover:border-primary hover:bg-primary/5 hover:scale-[1.02]",
+                "active:scale-[0.98]"
+              )}
             >
-              Cancel
+              <div className="rounded-full bg-primary/10 p-3">
+                <Camera className="h-6 w-6 text-primary" />
+              </div>
+              <span className="font-medium">Take Photo</span>
             </Button>
             <Button
               type="button"
-              onClick={capturePhoto}
-              className="flex-1"
+              variant="outline"
+              onClick={() => handleClick(false)}
+              className={cn(
+                "h-32 flex-col gap-3 border-2 transition-all",
+                "hover:border-primary hover:bg-primary/5 hover:scale-[1.02]",
+                "active:scale-[0.98]"
+              )}
             >
-              <Camera className="mr-2 h-4 w-4" />
-              Capture Photo
+              <div className="rounded-full bg-primary/10 p-3">
+                <Upload className="h-6 w-6 text-primary" />
+              </div>
+              <span className="font-medium">Upload Photo</span>
             </Button>
           </div>
+          <p className="text-xs text-center text-muted-foreground">
+            Choose to take a new photo or upload an existing one
+          </p>
         </div>
-      )}
-
-      {/* Upload area (shown when not in camera mode and no preview) */}
-      {!isCameraMode && !preview && (
-        <div
-          onClick={handleClick}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={cn(
-            "relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
-            isDragging
-              ? "border-primary bg-primary/5 scale-[1.02]"
-              : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
-          )}
-        >
-          <div className="space-y-4">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Upload className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">
-                <span className="text-primary">Click to upload</span> or drag and drop
-              </p>
-              <p className="text-xs text-muted-foreground">PNG, JPG, GIF up to 5MB</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Preview mode */}
-      {preview && (
-        <div className="space-y-4">
-          <div className="relative border-2 border-dashed rounded-lg p-4">
-            <div className="relative inline-block">
+      ) : (
+        <Card className="border-2 overflow-hidden shadow-lg">
+          <div className="relative">
+            <div className="relative aspect-video w-full bg-muted/30 flex items-center justify-center overflow-hidden rounded-t-lg">
               <img
                 src={preview}
                 alt="Preview"
-                className="max-h-64 rounded-lg object-contain shadow-lg"
+                className="w-full h-full object-contain"
               />
               <Button
                 type="button"
                 variant="destructive"
                 size="icon"
-                className="absolute -top-2 -right-2 h-8 w-8 rounded-full"
+                className="absolute top-3 right-3 h-9 w-9 rounded-full shadow-lg hover:scale-110 transition-transform"
                 onClick={handleRemove}
               >
                 <X className="h-4 w-4" />
               </Button>
             </div>
+            {(isProcessing || locationStatus) && (
+              <div className="p-4 bg-muted/30 border-t">
+                {isProcessing ? (
+                  <div className="flex items-center gap-3 text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-muted-foreground">Processing image and detecting location...</span>
+                  </div>
+                ) : locationStatus ? (
+                  <div className={cn(
+                    "flex items-start gap-3 text-sm",
+                    locationStatus.includes('detected:') ? "text-foreground" : "text-muted-foreground"
+                  )}>
+                    {locationStatus.includes('detected:') ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                    )}
+                    <span className="break-words">{locationStatus}</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
-          <div className="flex gap-2">
+          <div className="p-4 grid grid-cols-2 gap-3 border-t bg-muted/20">
             <Button
               type="button"
               variant="outline"
-              onClick={handleModeSwitch}
-              className="flex-1"
+              onClick={() => handleClick(true)}
+              size="sm"
+              className="hover:bg-primary/5"
             >
               <Camera className="mr-2 h-4 w-4" />
-              Retake Photo
+              Retake
             </Button>
             <Button
               type="button"
               variant="outline"
-              onClick={handleClick}
-              className="flex-1"
+              onClick={() => handleClick(false)}
+              size="sm"
+              className="hover:bg-primary/5"
             >
               <Upload className="mr-2 h-4 w-4" />
-              Choose Different
+              Change
             </Button>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   )
 }
-
