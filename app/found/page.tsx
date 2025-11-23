@@ -97,7 +97,7 @@ export default function FoundPage() {
       } else {
         toast({
           title: "Success!",
-          description: "Your found item has been submitted. Our AI is analyzing it now.",
+          description: "Your found item has been submitted. Our system is analyzing it now.",
         })
       }
 
@@ -125,7 +125,7 @@ export default function FoundPage() {
               Report Found Item
             </h1>
             <p className="text-base sm:text-lg text-muted-foreground">
-              Upload photos and our AI will automatically match it with lost items
+              Upload photos and our system will automatically match it with lost items
             </p>
           </div>
         </ScrollAnimation>
@@ -136,7 +136,7 @@ export default function FoundPage() {
           <CardHeader className="pb-6">
             <CardTitle className="text-2xl">Item Details</CardTitle>
             <CardDescription>
-              Our AI will analyze the images and generate a description automatically
+              Our system will analyze the images and generate a description automatically
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -212,7 +212,7 @@ export default function FoundPage() {
                 {isSubmitting ? (
                   <>
                     <Sparkles className="mr-2 h-4 w-4 animate-spin" />
-                    Processing with AI...
+                    Processing...
                   </>
                 ) : (
                   <>
