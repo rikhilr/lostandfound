@@ -146,7 +146,7 @@ export default function ResultCard({ item, onClaim, distance }: ResultCardProps)
 
   return (
     <>
-      <Card className="group overflow-hidden border-2 transition-all hover:shadow-lg hover:scale-[1.02] cursor-pointer" onClick={() => setShowDetails(true)}>
+      <Card className="group overflow-hidden border-2 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] hover:border-primary/30 cursor-pointer" onClick={() => setShowDetails(true)}>
         {/* Image Section */}
         <div className="relative h-64 w-full overflow-hidden bg-muted">
           {!imageError && primaryImage ? (
@@ -155,7 +155,7 @@ export default function ResultCard({ item, onClaim, distance }: ResultCardProps)
                 src={primaryImage}
                 alt={item.auto_title}
                 fill
-                className="object-cover transition-transform group-hover:scale-105"
+                className="object-cover transition-transform duration-500 group-hover:scale-110"
                 onError={() => setImageError(true)}
                 unoptimized
               />
@@ -222,7 +222,7 @@ export default function ResultCard({ item, onClaim, distance }: ResultCardProps)
           {/* Claim Logic (Preserved) */}
           {isClaimed ? (
             <Button
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
+              className="w-full bg-green-600 hover:bg-green-700 text-white animate-success"
               variant="default"
               disabled
             >
@@ -243,7 +243,7 @@ export default function ResultCard({ item, onClaim, distance }: ResultCardProps)
             </Button>
           ) : (
             <div 
-              className="space-y-4 animate-fade-in"
+              className="space-y-4 animate-fade-in-up"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="rounded-lg border bg-muted/50 p-3">

@@ -132,7 +132,7 @@ export default function FoundPage() {
 
         {/* Form Card */}
         <ScrollAnimation delay={100}>
-          <Card className="border bg-card hover:border-primary/20 transition-colors duration-300">
+          <Card className="border bg-card hover:border-primary/20 hover:shadow-lg transition-all duration-300">
           <CardHeader className="pb-6">
             <CardTitle className="text-2xl">Item Details</CardTitle>
             <CardDescription>
@@ -207,18 +207,18 @@ export default function FoundPage() {
                 type="submit"
                 disabled={isSubmitting}
                 size="lg"
-                className="w-full h-12 bg-foreground text-background hover:bg-foreground/90"
+                className="w-full h-12 bg-foreground text-background hover:bg-foreground/90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
               >
                 {isSubmitting ? (
                   <>
-                    <Sparkles className="mr-2 h-4 w-4 animate-pulse" />
+                    <Sparkles className="mr-2 h-4 w-4 animate-spin" />
                     Processing with AI...
                   </>
                 ) : (
                   <>
-                    <Upload className="mr-2 h-4 w-4" />
+                    <Upload className="mr-2 h-4 w-4 transition-transform group-hover:translate-y-[-2px]" />
                     Submit Found Item
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </>
                 )}
               </Button>

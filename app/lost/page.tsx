@@ -248,7 +248,7 @@ export default function LostPage() {
 
         {/* Search Form */}
         <ScrollAnimation delay={100}>
-          <Card className="border bg-card mb-8 sm:mb-12 hover:border-primary/20 transition-colors duration-300">
+          <Card className="border bg-card mb-8 sm:mb-12 hover:border-primary/20 hover:shadow-lg transition-all duration-300">
           <CardHeader className="pb-6">
             <CardTitle className="text-2xl">Search Description</CardTitle>
             <CardDescription>
@@ -356,7 +356,7 @@ export default function LostPage() {
                 type="submit"
                 disabled={isSearching}
                 size="lg"
-                className="w-full h-12 bg-foreground text-background hover:bg-foreground/90"
+                className="w-full h-12 bg-foreground text-background hover:bg-foreground/90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
               >
                 {isSearching ? (
                   <>
@@ -365,9 +365,9 @@ export default function LostPage() {
                   </>
                 ) : (
                   <>
-                    <Search className="mr-2 h-4 w-4" />
+                    <Search className="mr-2 h-4 w-4 transition-transform group-hover:scale-110" />
                     Search for Matches
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </>
                 )}
               </Button>
@@ -391,15 +391,13 @@ export default function LostPage() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {results.map((item, index) => (
-                  <ScrollAnimation key={item.id} delay={index * 50}>
-                    <div className="hover:scale-[1.02] transition-transform duration-300">
-                      <ResultCard
-                        item={item}
-                        onClaim={handleClaim}
-                        distance={item.distance}
-                      />
-                    </div>
-                  </ScrollAnimation>
+                  <div key={item.id} className="animate-fade-in-up" style={{ animationDelay: `${index * 50}ms` }}>
+                    <ResultCard
+                      item={item}
+                      onClaim={handleClaim}
+                      distance={item.distance}
+                    />
+                  </div>
                 ))}
               </div>
             </div>
@@ -407,15 +405,37 @@ export default function LostPage() {
         )}
 
         {results.length === 0 && !isSearching && (
-          <Card className="border bg-card">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No search results yet</h3>
-              <p className="text-sm text-muted-foreground text-center max-w-md">
-                Enter a detailed description above and click search to find matching items. Enable &quot;Alert me if found&quot; to get notified when someone finds your item.
-              </p>
-            </CardContent>
-          </Card>
+          <ScrollAnimation delay={300}>
+            <Card className="border bg-card hover:border-primary/20 transition-colors duration-300">
+              <CardContent className="flex flex-col items-center justify-center py-16 px-6">
+                <div className="rounded-full bg-muted/50 p-6 mb-6">
+                  <AlertCircle className="h-12 w-12 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">No search results yet</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-md leading-relaxed">
+                  Enter a detailed description above and click search to find matching items. Enable &quot;Alert me if found&quot; to get notified when someone finds your item.
+                </p>
+              </CardContent>
+            </Card>
+          </ScrollAnimation>
+        )}
+
+        {/* Loading state during search */}
+        {isSearching && (
+          <ScrollAnimation delay={200}>
+            <Card className="border bg-card">
+              <CardContent className="flex flex-col items-center justify-center py-16 px-6">
+                <div className="relative mb-6">
+                  <div className="h-16 w-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                  <Search className="absolute inset-0 m-auto h-6 w-6 text-primary animate-pulse" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Searching with AI...</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-md">
+                  Analyzing your description and matching it with found items
+                </p>
+              </CardContent>
+            </Card>
+          </ScrollAnimation>
         )}
       </div>
     </div>
