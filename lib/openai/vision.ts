@@ -98,12 +98,13 @@ Analyze the visual characteristics:
 - Size/shape description
 - Condition (new, used, scratches, wear)
 - Unique features (text, logos, designs, damage, accessories)
+- Names or other identifying information that could be linked to a person
 
 Return a JSON object with exactly these fields:
 {
-  "title": "Brief item name (max 40 chars)",
-  "description": "Detailed 2-3 sentence description focusing on visual identifying features like colors, materials, brand, size, condition, and unique marks",
-  "tags": ["color1", "color2", "material", "brand", "type", "condition", "feature1", "feature2"]
+  "title": "Brief item name (max 60 chars)",
+  "description": "Detailed 2-3 sentence description focusing on visual identifying features like colors, materials, brand, size, condition, and info like name or student id number and unique marks",
+  "tags": ["color1", "color2", "material", "brand", "type", "condition", "feature1", "feature2", "name", "student id number"]
 }
 
 Example:
@@ -111,7 +112,15 @@ Example:
   "title": "Black Leather Wallet",
   "description": "A black leather wallet with a red stripe on the left side. The wallet shows moderate wear with scuff marks on the corners. It has a visible card slot and appears to be a bifold design.",
   "tags": ["black", "red", "leather", "wallet", "bifold", "worn", "card slot"]
-}`,
+}
+Example:
+{
+  "title": "John Doe Student ID Card",
+  "description": "A student ID card with the name John Doe and the student ID number 1234567890. The card is made of plastic and has a barcode on the back. The card is in good condition and shows no signs of wear.",
+  "tags": ["John Doe", "1234567890", "student id", "plastic", "barcode"]
+}
+
+`,
           },
           {
             type: 'image_url',
@@ -123,7 +132,7 @@ Example:
       },
     ],
     response_format: { type: 'json_object' }, // Force JSON mode
-    max_tokens: 600,
+    max_tokens: 1000,
   })
 
   const content = response.choices[0]?.message?.content
