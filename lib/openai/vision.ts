@@ -80,7 +80,7 @@ Return JSON with:
  */
 export async function analyzeImage(imageUrl: string): Promise<ImageAnalysis> {
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-5.1',
     messages: [
       {
         role: 'user',
@@ -145,7 +145,7 @@ Example:
       },
     ],
     response_format: { type: 'json_object' }, // Force JSON mode
-    max_tokens: 1000,
+    max_completion_tokens: 1000,
   })
 
   const content = response.choices[0]?.message?.content
