@@ -1,14 +1,15 @@
 'use client'
 import LocationAutocomplete from "@/components/LocationAutocomplete";
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ResultCard from '@/components/ResultCard'
+import MapView from '@/components/MapView'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { Search, Sparkles, AlertCircle, MapPin, Bell, ArrowRight } from 'lucide-react'
+import { Search, Sparkles, AlertCircle, MapPin, Bell, ArrowRight, List, Map } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import ImageUpload from '@/components/ImageUpload'
 import ScrollAnimation from '@/components/ScrollAnimation'
@@ -30,6 +31,8 @@ interface SearchResult {
   tags: string[]
   similarity: number
   distance?: number
+  latitude?: number | null
+  longitude?: number | null
 }
 
 
@@ -44,6 +47,10 @@ export default function LostPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
   
+  // View Mode State
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list')
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null)
+  
   // Alert State
   const [alertEnabled, setAlertEnabled] = useState(false)
   const [contactInfo, setContactInfo] = useState('')
@@ -52,6 +59,23 @@ export default function LostPage() {
   
   // Claim State
   const [claimStatus, setClaimStatus] = useState<{ [key: string]: 'success' | 'error' | null }>({})
+
+  // Get user's current location when switching to map view
+  useEffect(() => {
+    if (viewMode === 'map' && !userLocation && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          })
+        },
+        (error) => {
+          console.log('Error getting location:', error)
+        }
+      )
+    }
+  }, [viewMode, userLocation])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -384,22 +408,98 @@ export default function LostPage() {
                 <h2 className="text-2xl sm:text-3xl font-bold">
                   {results.length} Potential Match{results.length !== 1 ? 'es' : ''} Found
                 </h2>
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                  <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
-                  Ranked by similarity
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                    <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
+                    Ranked by similarity
+                  </div>
+                  {/* View Toggle */}
+                  <div className="flex items-center gap-2 border rounded-lg p-1 bg-muted/30">
+                    <Button
+                      type="button"
+                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className="gap-2"
+                    >
+                      <List className="h-4 w-4" />
+                      List
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={viewMode === 'map' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('map')}
+                      className="gap-2"
+                    >
+                      <Map className="h-4 w-4" />
+                      Map
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                {results.map((item, index) => (
-                  <div key={item.id} className="animate-fade-in-up" style={{ animationDelay: `${index * 50}ms` }}>
-                    <ResultCard
-                      item={item}
-                      onClaim={handleClaim}
-                      distance={item.distance}
-                    />
-                  </div>
-                ))}
-              </div>
+              
+              {/* List View */}
+              {viewMode === 'list' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  {results.map((item, index) => (
+                    <div key={item.id} className="animate-fade-in-up" style={{ animationDelay: `${index * 50}ms` }}>
+                      <ResultCard
+                        item={item}
+                        onClaim={handleClaim}
+                        distance={item.distance}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Map View */}
+              {viewMode === 'map' && (
+                <>
+                  {results.filter(r => r.latitude && r.longitude).length === 0 && (
+                    <Card className="border bg-card mb-4">
+                      <CardContent className="py-6">
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <MapPin className="h-5 w-5" />
+                          <p className="text-sm">
+                            No items with location coordinates found. Items need GPS coordinates to appear on the map.
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  <MapView
+                    items={(() => {
+                      const mappedItems = results.map(item => ({
+                        id: item.id,
+                        auto_title: item.auto_title,
+                        auto_description: item.auto_description,
+                        location: item.location,
+                        latitude: item.latitude ?? null,
+                        longitude: item.longitude ?? null,
+                        image_urls: item.image_urls || [],
+                        image_url: item.image_urls?.[0],
+                        created_at: item.created_at,
+                        distance: item.distance,
+                      }))
+                      console.log('LostPage: Passing items to MapView:', mappedItems.length, 'items')
+                      console.log('LostPage: Items with coords:', mappedItems.filter(i => i.latitude && i.longitude).length)
+                      mappedItems.forEach((item, idx) => {
+                        console.log(`LostPage: Item ${idx + 1}:`, {
+                          title: item.auto_title,
+                          lat: item.latitude,
+                          lng: item.longitude,
+                          hasCoords: !!(item.latitude && item.longitude)
+                        })
+                      })
+                      return mappedItems
+                    })()}
+                    userLocation={userLocation}
+                    height="600px"
+                  />
+                </>
+              )}
             </div>
           </ScrollAnimation>
         )}

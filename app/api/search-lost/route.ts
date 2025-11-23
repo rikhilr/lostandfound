@@ -64,9 +64,26 @@ export async function POST(request: NextRequest) {
       }
 
       if (data && data.length > 0) {
-        results = data
+        // Fetch full item data including coordinates
+        const itemIds = data.map((item: any) => item.id)
+        const { data: fullItems, error: fetchError } = await supabaseAdmin
+          .from('items_found')
+          .select('*, latitude, longitude')
+          .in('id', itemIds)
+        
+        if (fetchError) {
+          console.error('Error fetching full item data:', fetchError)
+          results = data // Use RPC results as fallback
+        } else {
+          // Merge RPC results with full item data (preserve similarity scores)
+          results = data.map((rpcItem: any) => {
+            const fullItem = fullItems?.find((fi: any) => fi.id === rpcItem.id)
+            return fullItem ? { ...fullItem, similarity: rpcItem.similarity } : rpcItem
+          })
+        }
+        
         matchThreshold = threshold
-        console.log(`Found ${data.length} results with threshold ${threshold}`)
+        console.log(`Found ${results.length} results with threshold ${threshold}`)
         break
       }
     }
@@ -127,6 +144,8 @@ export async function POST(request: NextRequest) {
             tags: item.tags || [],
             similarity: 0.5, // Approximate similarity for text matches
             distance,
+            latitude: item.latitude,
+            longitude: item.longitude,
           }
         })
         
@@ -171,6 +190,8 @@ export async function POST(request: NextRequest) {
           tags: item.tags || [],
           similarity: item.similarity || 0,
           distance,
+          latitude: item.latitude,
+          longitude: item.longitude,
         }
       })
 
