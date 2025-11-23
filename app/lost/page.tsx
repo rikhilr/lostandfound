@@ -45,10 +45,33 @@ export default function LostPage() {
     e.preventDefault()
     setResults([])
 
-    if (!description.trim()) {
+    const trimmedDescription = description.trim()
+    
+    if (!trimmedDescription) {
       toast({
         title: "Missing Description",
         description: "Please describe your lost item",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Security: Validate minimum length on frontend
+    if (trimmedDescription.length < 5) {
+      toast({
+        title: "Description Too Short",
+        description: "Please provide at least 5 characters with more details about your lost item.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Security: Require at least 2 meaningful words
+    const words = trimmedDescription.split(/\s+/).filter(word => word.length > 2)
+    if (words.length < 2) {
+      toast({
+        title: "Description Too Vague",
+        description: "Please provide a more detailed description with at least 2 meaningful words.",
         variant: "destructive",
       })
       return
