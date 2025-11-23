@@ -11,6 +11,12 @@ export async function POST(request: NextRequest) {
     const contactInfo = formData.get('contact_info') as string
     const alertEnabled = formData.get('alert_enabled') === 'true'
     const imageFiles = formData.getAll('images') as File[]
+    const latitudeStr = formData.get('latitude') as string | null
+    const longitudeStr = formData.get('longitude') as string | null
+    
+    // Parse coordinates if provided
+    const latitude = latitudeStr ? parseFloat(latitudeStr) : null
+    const longitude = longitudeStr ? parseFloat(longitudeStr) : null
 
     if (!description || !contactInfo) {
       return NextResponse.json(
@@ -98,7 +104,9 @@ export async function POST(request: NextRequest) {
         alert_enabled: alertEnabled,
         notification_token: notificationToken,
         embedding,
-        status: 'active'
+        status: 'active',
+        latitude: latitude,
+        longitude: longitude,
       })
       .select()
       .single()

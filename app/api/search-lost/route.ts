@@ -1,29 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/server";
-import { getTextEmbedding } from "@/lib/openai/embeddings";
-
-function haversineDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) *
-      Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/server'
+import { getTextEmbedding } from '@/lib/openai/embeddings'
+import { calculateDistance } from '@/lib/utils/geography'
 
 export async function POST(request: NextRequest) {
   try {
-    const { description, location, lat, lng, radius } = await request.json();
+    const { description, location, latitude, longitude, radiusMiles } = await request.json()
 
     if (!description || description.trim().length < 5) {
       return NextResponse.json(
@@ -44,108 +26,187 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Don't include location in embedding - it changes the semantic meaning
-    // Location is only used for geographic distance filtering
-    const embedding = await getTextEmbedding(trimmedDescription);
-
-    const { data: vectorResults, error } = await supabaseAdmin.rpc(
-      "search_similar_items",
-      {
-        query_embedding: embedding,
-        match_threshold: 0.55,
-        match_count: 50,
-      }
-    );
-
-    if (error) {
-      console.error("Supabase vector search error:", error);
-      return NextResponse.json(
-        { error: "Vector search failed" },
-        { status: 500 }
-      );
-    }
-
-    console.log("🔍 Raw vector results count:", vectorResults?.length || 0);
+    // 1. Generate embedding for the search query
+    // Build a comprehensive search text similar to how found items are stored
+    // Found items use: title + description + tags, so we should search with similar structure
+    const searchText = location 
+      ? `${trimmedDescription} ${location}`.trim()
+      : trimmedDescription
     
-    // Convert DB lat/lng into numbers
-    let results = (vectorResults || []).map((row: any) => ({
-      id: row.id,
-      auto_title: row.auto_title,
-      auto_description: row.auto_description,
-      image_urls: row.image_urls || [],
-      location: row.location,
-      lat: row.lat !== null ? Number(row.lat) : null,
-      lng: row.lng !== null ? Number(row.lng) : null,
-      created_at: row.created_at,
-      tags: row.tags || [],
-      similarity: row.similarity ?? 0,
-    }));
+    console.log('Search query:', searchText)
+    const queryEmbedding = await getTextEmbedding(searchText)
+    console.log('Embedding generated, length:', queryEmbedding.length)
 
-    console.log("📊 Results after mapping:", results.length);
-    if (results.length > 0) {
-      console.log("First result:", results[0].auto_title);
+    // 2. Try with stricter thresholds to prevent overly broad matches
+    // Security: Use higher thresholds to prevent fishing/abuse
+    let matchThreshold = 0.65 // Start with 65% similarity (stricter)
+    let results: any[] = []
+    let searchError: any = null
+
+    // Try multiple thresholds if no results (but keep them reasonably high)
+    // Request more results if we need to filter by radius
+    const matchCount = (radiusMiles !== null && radiusMiles !== undefined) ? 50 : 20
+    
+    for (const threshold of [0.65, 0.6, 0.55]) {
+      const { data, error } = await supabaseAdmin.rpc(
+        'search_similar_items',
+        {
+          query_embedding: queryEmbedding,
+          match_threshold: threshold,
+          match_count: matchCount, // Get more results to filter
+        }
+      )
+
+      if (error) {
+        console.error('Search error:', error)
+        searchError = error
+        break
+      }
+
+      if (data && data.length > 0) {
+        results = data
+        matchThreshold = threshold
+        console.log(`Found ${data.length} results with threshold ${threshold}`)
+        break
+      }
     }
 
-    // Convert incoming values to numbers
-    const latNum = Number(lat);
-    const lngNum = Number(lng);
-    const radiusNum = Number(radius);
+    if (searchError || results.length === 0) {
+      console.log('No vector matches found, trying text fallback...')
+      // Fallback to direct query with text matching
+      const { data: fallbackResults, error: fallbackError } = await supabaseAdmin
+        .from('items_found')
+        .select('*, latitude, longitude')
+        .eq('claimed', false)
+        .limit(50)
 
-    const hasCoords =
-      lat !== null &&
-      lng !== null &&
-      !isNaN(latNum) &&
-      !isNaN(lngNum) &&
-      latNum !== 0 &&
-      lngNum !== 0 &&
-      !isNaN(radiusNum) &&
-      radiusNum > 0;
+      if (fallbackError) {
+        console.error('Fallback error:', fallbackError)
+        return NextResponse.json({ error: 'Search failed' }, { status: 500 })
+      }
 
-    console.log("🔍 Search params:", { hasCoords, lat, lng, latNum, lngNum, radiusNum });
-
-    if (hasCoords) {
-      console.log("🌍 Applying distance filter...");
-      console.log(`📍 Search center: (${latNum}, ${lngNum}), radius: ${radiusNum}km`);
+      // Simple text matching fallback with stricter requirements
+      // Security: Require multiple words to match, not just one
+      const searchWords = searchText.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2)
       
-      // Add distance to each item and sort by distance
-      results = results
+      // Security: Require at least 2 words to match for text fallback
+      if (searchWords.length < 2) {
+        return NextResponse.json({ results: [] })
+      }
+      
+      const filtered = (fallbackResults || [])
+        ?.filter((item) => {
+          const itemText = `${item.auto_title || ''} ${item.auto_description || ''} ${(item.tags || []).join(' ')}`.toLowerCase()
+          // Security: Require at least 2 words to match (not just one)
+          const matchingWords = searchWords.filter((word: string) => itemText.includes(word))
+          return matchingWords.length >= 2
+        })
+        .slice(0, 10)
         .map((item: any) => {
-          // Items without coordinates get Infinity distance (appear last)
-          if (item.lat === null || item.lng === null) {
-            console.log(`⚠️ Item "${item.auto_title}" has no coordinates - keeping it`);
-            return { ...item, distance: Infinity };
+          let distance: number | undefined = undefined
+          
+          // Calculate distance if coordinates are provided
+          if (latitude !== undefined && longitude !== undefined && 
+              item.latitude !== null && item.longitude !== null) {
+            distance = calculateDistance(
+              latitude,
+              longitude,
+              item.latitude,
+              item.longitude
+            )
           }
           
-          // Calculate distance for items with coordinates
-          const distance = haversineDistance(latNum, lngNum, item.lat, item.lng);
-          console.log(`📍 Item "${item.auto_title}" at (${item.lat}, ${item.lng}) - distance: ${distance.toFixed(2)}km`);
-          return { ...item, distance };
+          return {
+            id: item.id,
+            image_urls: item.image_urls || (item.image_url ? [item.image_url] : []),
+            image_url: item.image_urls?.[0] || item.image_url,
+            auto_title: item.auto_title,
+            auto_description: item.auto_description,
+            location: item.location,
+            created_at: item.created_at,
+            tags: item.tags || [],
+            similarity: 0.5, // Approximate similarity for text matches
+            distance,
+          }
         })
-        // Keep items within radius OR items without coordinates
+        
+        // Filter by radius if provided (for fallback results too)
         .filter((item: any) => {
-          const withinRadius = item.distance <= radiusNum;
-          const noCoords = item.distance === Infinity;
-          const keep = withinRadius || noCoords;
-          
-          if (!keep) {
-            console.log(`❌ FILTERED OUT: "${item.auto_title}" - ${item.distance.toFixed(2)}km > ${radiusNum}km radius`);
-          } else if (withinRadius) {
-            console.log(`✅ KEPT: "${item.auto_title}" - ${item.distance.toFixed(2)}km within ${radiusNum}km radius`);
-          } else {
-            console.log(`✅ KEPT: "${item.auto_title}" - no coordinates`);
+          if (radiusMiles !== null && radiusMiles !== undefined && 
+              latitude !== undefined && longitude !== undefined) {
+            return item.distance === undefined || item.distance <= radiusMiles
           }
-          
-          return keep;
+          return true
         })
-        // Sort: nearby items first, then items without location
-        .sort((a: any, b: any) => a.distance - b.distance);
-      
-      console.log("📊 Results after distance filtering:", results.length);
-    } else {
-      console.log("⚠️ No coordinates provided, skipping distance filter");
+
+      console.log(`Text fallback found ${filtered.length} results`)
+      return NextResponse.json({ results: filtered })
     }
 
-    return NextResponse.json({ results });
+    // Filter out claimed items and format results
+    let unclaimedResults = results
+      .filter((item: any) => !item.claimed)
+      .map((item: any) => {
+        let distance: number | undefined = undefined
+        
+        // Calculate distance if coordinates are provided
+        if (latitude !== undefined && longitude !== undefined && 
+            item.latitude !== null && item.longitude !== null) {
+          distance = calculateDistance(
+            latitude,
+            longitude,
+            item.latitude,
+            item.longitude
+          )
+        }
+        
+        return {
+          id: item.id,
+          image_urls: item.image_urls || (item.image_url ? [item.image_url] : []), // Support both old and new format
+          image_url: item.image_urls?.[0] || item.image_url, // For backward compatibility
+          auto_title: item.auto_title,
+          auto_description: item.auto_description,
+          location: item.location,
+          created_at: item.created_at,
+          tags: item.tags || [],
+          similarity: item.similarity || 0,
+          distance,
+        }
+      })
+
+    // Filter by radius if provided
+    if (radiusMiles !== null && radiusMiles !== undefined && latitude !== undefined && longitude !== undefined) {
+      unclaimedResults = unclaimedResults.filter((item: any) => {
+        // Include items without coordinates when radius filter is active (show all)
+        // Or include items within the radius
+        return item.distance === undefined || item.distance <= radiusMiles
+      })
+      
+      // Sort by similarity first, then by distance (if available)
+      unclaimedResults.sort((a: any, b: any) => {
+        // Primary sort: similarity (higher is better)
+        if (Math.abs(a.similarity - b.similarity) > 0.01) {
+          return b.similarity - a.similarity
+        }
+        // Secondary sort: distance (lower is better, but only if both have distance)
+        if (a.distance !== undefined && b.distance !== undefined) {
+          return a.distance - b.distance
+        }
+        // Items with distance come before items without
+        if (a.distance !== undefined) return -1
+        if (b.distance !== undefined) return 1
+        return 0
+      })
+    } else {
+      // No radius filter: sort by similarity only
+      unclaimedResults.sort((a: any, b: any) => b.similarity - a.similarity)
+    }
+
+    unclaimedResults = unclaimedResults.slice(0, 10)
+
+    console.log(`Returning ${unclaimedResults.length} results (threshold: ${matchThreshold})`)
+
+    return NextResponse.json({ results: unclaimedResults });
   } catch (error) {
     console.error("search-lost failed:", error);
     return NextResponse.json(

@@ -177,7 +177,7 @@ export default function NotifyPage() {
             <Bell className="h-12 w-12 text-muted-foreground mb-4" />
             <h2 className="text-2xl font-bold mb-2">No Matches Yet</h2>
             <p className="text-muted-foreground text-center max-w-md">
-              We'll notify you here when someone finds an item that matches your lost item description.
+              We&apos;ll notify you here when someone finds an item that matches your lost item description.
             </p>
           </CardContent>
         </Card>

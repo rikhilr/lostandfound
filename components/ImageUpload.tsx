@@ -11,8 +11,8 @@ import exifr from 'exifr'
 
 interface ImageUploadProps {
   onImageSelect: (files: File[]) => void
-  onLocationDetected?: (location: string) => void
-  onCoordinatesDetected?: (coords: { lat: number; lng: number }) => void  // ✅ New prop
+  onLocationDetected?: (location: string, coordinates?: { lat: number, lng: number }) => void
+  onCoordinatesDetected?: (coords: { lat: number; lng: number }) => void
   currentImages?: string[]
 }
 
@@ -51,21 +51,36 @@ export default function ImageUpload({
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`
       )
-      const data = await response.json()
-      await logToServer('Reverse geocoding response', { hasDisplayName: !!data.display_name, displayName: data.display_name })
-      if (data.display_name) {
-        return data.display_name
+      
+      if (!response.ok) {
+        await logToServer('Reverse geocoding HTTP error', { status: response.status, statusText: response.statusText })
+        return null
       }
+      
+      const data = await response.json()
+      await logToServer('Reverse geocoding response', { 
+        hasDisplayName: !!data.display_name, 
+        displayName: data.display_name,
+        displayNameLength: data.display_name?.length,
+        fullResponse: JSON.stringify(data).substring(0, 200)
+      })
+      
+      if (data.display_name && data.display_name.trim().length > 0) {
+        const location = data.display_name.trim()
+        await logToServer('Reverse geocoding success', { location })
+        return location
+      }
+      
+      await logToServer('Reverse geocoding: no valid display_name', { dataKeys: Object.keys(data) })
       return null
     } catch (error) {
-      await logToServer('Reverse geocoding error', { error: String(error) })
+      await logToServer('Reverse geocoding error', { error: String(error), errorStack: error instanceof Error ? error.stack : undefined })
       console.error('Reverse geocoding error:', error)
       return null
     }
   }
 
-  // ✅ Modified to return both location string and coordinates
-  const extractLocationFromImage = async (file: File): Promise<{ location: string; coords: { lat: number; lng: number } } | null> => {
+  const extractLocationFromImage = async (file: File): Promise<{ location: string | null, coordinates: { lat: number, lng: number } | null }> => {
     try {
       await logToServer('Starting EXIF extraction', { fileName: file.name, fileSize: file.size, fileType: file.type })
       
@@ -116,30 +131,37 @@ export default function ImageUpload({
       })
       
       if (exifData?.latitude && exifData?.longitude) {
+        await logToServer('EXIF GPS found, reverse geocoding', { 
+          lat: exifData.latitude, 
+          lon: exifData.longitude 
+        })
         const location = await reverseGeocode(exifData.latitude, exifData.longitude)
-        if (location) {
-          return {
-            location,
-            coords: { lat: exifData.latitude, lng: exifData.longitude }
-          }
+        await logToServer('After reverse geocode', { 
+          location, 
+          hasLocation: !!location,
+          locationType: typeof location,
+          locationLength: location?.length
+        })
+        return {
+          location,
+          coordinates: { lat: exifData.latitude, lng: exifData.longitude }
         }
       }
       
       await logToServer('No GPS data found in EXIF after all attempts')
-      return null
+      return { location: null, coordinates: null }
     } catch (error) {
       await logToServer('EXIF extraction error', { error: String(error) })
       console.error('EXIF extraction error:', error)
-      return null
+      return { location: null, coordinates: null }
     }
   }
 
-  // ✅ Modified to return both location string and coordinates
-  const getCurrentLocation = async (): Promise<{ location: string; coords: { lat: number; lng: number } } | null> => {
+  const getCurrentLocation = async (): Promise<{ location: string | null, coordinates: { lat: number, lng: number } | null }> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         logToServer('Geolocation not available')
-        resolve(null)
+        resolve({ location: null, coordinates: null })
         return
       }
 
@@ -150,18 +172,21 @@ export default function ImageUpload({
             lat: position?.coords?.latitude, 
             lon: position?.coords?.longitude 
           })
+          
           if (position?.coords) {
-            const location = await reverseGeocode(position.coords.latitude, position.coords.longitude)
-            if (location) {
-              resolve({
-                location,
-                coords: { lat: position.coords.latitude, lng: position.coords.longitude }
-              })
-            } else {
-              resolve(null)
+            const coordinates = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
             }
+            const location = await reverseGeocode(position.coords.latitude, position.coords.longitude)
+            await logToServer('getCurrentLocation: resolved with result', { 
+              location, 
+              hasLocation: !!location,
+              coordinates 
+            })
+            resolve({ location, coordinates })
           } else {
-            resolve(null)
+            resolve({ location: null, coordinates: null })
           }
         },
         async (error) => {
@@ -169,7 +194,7 @@ export default function ImageUpload({
             code: error.code, 
             message: error.message 
           })
-          resolve(null)
+          resolve({ location: null, coordinates: null })
         },
         { enableHighAccuracy: true, timeout: 8000 }
       )
@@ -214,30 +239,37 @@ export default function ImageUpload({
         setIsProcessing(true)
         setLocationStatus('Processing image...')
 
-        let locationData: { location: string; coords: { lat: number; lng: number } } | null = null
+        let locationResult = await extractLocationFromImage(newFiles[0])
+        await logToServer('After extractLocationFromImage', { 
+          hasLocation: !!locationResult.location,
+          location: locationResult.location,
+          hasCoordinates: !!locationResult.coordinates
+        })
         
-        // ✅ Try EXIF first
-        locationData = await extractLocationFromImage(newFiles[0])
-        
-        // ✅ Fall back to geolocation
-        if (!locationData) {
-          locationData = await getCurrentLocation()
+        if (!locationResult.location) {
+          await logToServer('Trying getCurrentLocation as fallback')
+          locationResult = await getCurrentLocation()
+          await logToServer('After getCurrentLocation', { 
+            hasLocation: !!locationResult.location,
+            location: locationResult.location,
+            hasCoordinates: !!locationResult.coordinates
+          })
         }
 
-        if (locationData) {
-          await logToServer('Location detected successfully', locationData)
-          
-          // ✅ Call both callbacks
-          if (onLocationDetected) {
-            onLocationDetected(locationData.location)
-          }
-          if (onCoordinatesDetected) {
-            onCoordinatesDetected(locationData.coords)
-          }
-          
-          setLocationStatus(`Location detected: ${locationData.location}`)
+        if (locationResult.location && locationResult.location.trim().length > 0 && onLocationDetected) {
+          await logToServer('Location detected successfully', { 
+            location: locationResult.location, 
+            hasCoordinates: !!locationResult.coordinates 
+          })
+          onLocationDetected(locationResult.location, locationResult.coordinates || undefined)
+          setLocationStatus(`Location detected: ${locationResult.location}`)
         } else {
-          await logToServer('Location detection failed - both methods failed')
+          await logToServer('Location detection failed - both methods failed', {
+            locationResultLocation: locationResult.location,
+            locationResultLocationType: typeof locationResult.location,
+            locationResultLocationLength: locationResult.location?.length,
+            hasOnLocationDetected: !!onLocationDetected
+          })
           setLocationStatus('Location not detected - please enter manually')
         }
         

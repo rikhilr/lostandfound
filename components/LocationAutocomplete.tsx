@@ -46,12 +46,22 @@ export default function LocationAutocomplete({
     });
   }, []);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Prevent form submission when Enter is pressed in the location input
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+
   return (
     <input
       ref={inputRef}
+      type="text"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder="Enter a location…"
+      onKeyDown={handleKeyDown}
+      placeholder="Enter a location..."
       className="border rounded-lg p-2 w-full pl-9 bg-background text-foreground"
     />
   );

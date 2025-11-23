@@ -16,6 +16,7 @@ import {
 import { MapPin, Calendar, Shield, CheckCircle2, Mail, ChevronLeft, ChevronRight, X, Volume2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/use-toast'
+import { formatDistance } from '@/lib/utils/geography'
 
 interface ResultCardProps {
   item: {
@@ -29,9 +30,10 @@ interface ResultCardProps {
     tags?: string[]
   }
   onClaim: (itemId: string, claimerContact: string) => void
+  distance?: number
 }
 
-export default function ResultCard({ item, onClaim }: ResultCardProps) {
+export default function ResultCard({ item, onClaim, distance }: ResultCardProps) {
   // Original State
   const [showClaimForm, setShowClaimForm] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
@@ -180,15 +182,25 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
         </CardHeader>
         
         <CardContent className="space-y-4">
+          <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
-              <span className="truncate max-w-[120px]">{item.location}</span>
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="truncate">{item.location}</span>
             </div>
-            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
               <Calendar className="h-3 w-3" />
               <span>{new Date(item.created_at).toLocaleDateString()}</span>
+              </div>
             </div>
+            {distance !== undefined && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-muted-foreground">Distance:</span>
+                <span className="text-primary font-medium">
+                  {formatDistance(distance)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Listen Button - Added Here */}
@@ -240,7 +252,7 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
                   <div className="flex-1">
                     <Label className="text-sm font-medium">Your Contact Information</Label>
                     <p className="text-sm text-muted-foreground mt-1">
-                      We'll share your contact info with the finder so they can reach out to you.
+                      We&apos;ll share your contact info with the finder so they can reach out to you.
                     </p>
                   </div>
                 </div>
@@ -368,11 +380,18 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
           )}
 
           {/* Details */}
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Location:</span>
-              <span className="font-medium">{item.location}</span>
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-2">
+              <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+              <div className="flex-1">
+                <div className="text-muted-foreground mb-1">Location</div>
+                <div className="font-medium">{item.location}</div>
+                {distance !== undefined && (
+                  <div className="mt-1 text-primary font-medium text-xs">
+                    {formatDistance(distance)}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />

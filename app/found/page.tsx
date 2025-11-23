@@ -16,6 +16,7 @@ export default function FoundPage() {
   const { toast } = useToast()
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [location, setLocation] = useState('')
+  const [coordinates, setCoordinates] = useState<{lat: number, lng: number} | null>(null)
   const [contactInfo, setContactInfo] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -59,10 +60,10 @@ export default function FoundPage() {
       })
       formData.append('location', location)
       formData.append('contact_info', contactInfo)
-      formData.append("lat", coords?.lat ? String(coords.lat) : "");
-      formData.append("lng", coords?.lng ? String(coords.lng) : "");
-
-      console.log("📤 Submitting with coords:", coords)
+      if (coordinates) {
+        formData.append('latitude', coordinates.lat.toString())
+        formData.append('longitude', coordinates.lng.toString())
+      }
 
       const response = await fetch('/api/found-item', {
         method: 'POST',
@@ -91,7 +92,7 @@ export default function FoundPage() {
               </p>
             </div>
           ),
-          duration: 10000, 
+          duration: 999999999, // Persistent - requires manual dismissal
         })
       } else {
         toast({
@@ -144,8 +145,11 @@ export default function FoundPage() {
                 <Label htmlFor="image">Upload Photos</Label>
                 <ImageUpload
                   onImageSelect={(files) => setImageFiles(files)}
-                  onLocationDetected={(detectedLocation) => {
+                  onLocationDetected={(detectedLocation, detectedCoordinates) => {
                     setLocation(detectedLocation)
+                    if (detectedCoordinates) {
+                      setCoordinates(detectedCoordinates)
+                    }
                     toast({
                       title: "Location auto-filled",
                       description: "Location detected from photo",
@@ -173,10 +177,7 @@ export default function FoundPage() {
                   <LocationAutocomplete
                     value={location}
                     onChange={setLocation}
-                    onSelectCoordinates={(c) => {
-                      console.log("✅ Coordinates from autocomplete:", c);
-                      setCoords(c);
-                    }}
+                    onSelectCoordinates={setCoordinates}
                   />
                 </div>
                 {coords && (

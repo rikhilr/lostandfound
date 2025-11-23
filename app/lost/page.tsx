@@ -12,6 +12,13 @@ import { Search, Sparkles, AlertCircle, MapPin, Bell, ArrowRight } from 'lucide-
 import { Switch } from '@/components/ui/switch'
 import ImageUpload from '@/components/ImageUpload'
 import ScrollAnimation from '@/components/ScrollAnimation'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface SearchResult {
   id: string
@@ -22,6 +29,7 @@ interface SearchResult {
   created_at: string
   tags: string[]
   similarity: number
+  distance?: number
 }
 
 
@@ -31,6 +39,8 @@ export default function LostPage() {
   // Search State
   const [description, setDescription] = useState('')
   const [searchLocation, setSearchLocation] = useState('')
+  const [searchCoordinates, setSearchCoordinates] = useState<{lat: number, lng: number} | null>(null)
+  const [radiusMiles, setRadiusMiles] = useState<string>('any')
   const [isSearching, setIsSearching] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
   
@@ -38,12 +48,7 @@ export default function LostPage() {
   const [alertEnabled, setAlertEnabled] = useState(false)
   const [contactInfo, setContactInfo] = useState('')
   const [alertImages, setAlertImages] = useState<File[]>([])
-
-  const [coords, setCoords] = useState<{ lat: number | null; lng: number | null }>({
-    lat: null,
-    lng: null
-  });
-  const [radiusKm, setRadiusKm] = useState(5);
+  const [alertCoordinates, setAlertCoordinates] = useState<{lat: number, lng: number} | null>(null)
   
   // Claim State
   const [claimStatus, setClaimStatus] = useState<{ [key: string]: 'success' | 'error' | null }>({})
@@ -105,10 +110,9 @@ export default function LostPage() {
         body: JSON.stringify({
           description,
           location: searchLocation,
-          lat: coords?.lat ?? null,
-          lng: coords?.lng ?? null,
-          radius: radiusKm,
-          contact_info: contactInfo,
+          latitude: searchCoordinates?.lat,
+          longitude: searchCoordinates?.lng,
+          radiusMiles: radiusMiles === 'any' ? null : parseFloat(radiusMiles)
         }),
       })
 
@@ -128,6 +132,10 @@ export default function LostPage() {
           formData.append('location', searchLocation)
           formData.append('contact_info', contactInfo)
           formData.append('alert_enabled', 'true')
+          if (alertCoordinates) {
+            formData.append('latitude', alertCoordinates.lat.toString())
+            formData.append('longitude', alertCoordinates.lng.toString())
+          }
           
           alertImages.forEach((image) => {
             formData.append('images', image)
@@ -211,7 +219,7 @@ export default function LostPage() {
       toast({
         title: "Item Claimed!",
         description: `Contact the finder at: ${data.finderContact}`,
-        duration: 5000,
+        duration: 999999999, // Persistent - requires manual dismissal
       })
     } catch (err) {
       setClaimStatus({ ...claimStatus, [itemId]: 'error' })
@@ -267,24 +275,39 @@ export default function LostPage() {
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <LocationAutocomplete
-  value={searchLocation}
-  onChange={setSearchLocation}
-  onSelectCoordinates={(c) => setCoords(c)}
-/>
+                    value={searchLocation}
+                    onChange={setSearchLocation}
+                    onSelectCoordinates={(coords) => {
+                      setSearchCoordinates(coords)
+                      if (alertEnabled) {
+                        setAlertCoordinates(coords)
+                      }
+                    }}
+                  />
                 </div>
               </div>
-              <input
-  type="range"
-  min={1}
-  max={50}
-  value={radiusKm}
-  onChange={(e) => setRadiusKm(Number(e.target.value))}
-  className="w-full"
-/>
 
-<p className="text-sm text-muted-foreground">
-  Search radius: {radiusKm} km
-</p>
+              {searchCoordinates && (
+                <div className="space-y-2">
+                  <Label htmlFor="radius">Search Within</Label>
+                  <Select value={radiusMiles} onValueChange={setRadiusMiles}>
+                    <SelectTrigger id="radius" className="bg-background border-border">
+                      <SelectValue placeholder="Select radius" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any distance</SelectItem>
+                      <SelectItem value="1">1 mile</SelectItem>
+                      <SelectItem value="5">5 miles</SelectItem>
+                      <SelectItem value="10">10 miles</SelectItem>
+                      <SelectItem value="25">25 miles</SelectItem>
+                      <SelectItem value="50">50 miles</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Filter results to items found within the selected radius
+                  </p>
+                </div>
+              )}
 
               {/* Alert Toggle */}
               <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
@@ -373,6 +396,7 @@ export default function LostPage() {
                       <ResultCard
                         item={item}
                         onClaim={handleClaim}
+                        distance={item.distance}
                       />
                     </div>
                   </ScrollAnimation>
@@ -388,7 +412,7 @@ export default function LostPage() {
               <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No search results yet</h3>
               <p className="text-sm text-muted-foreground text-center max-w-md">
-                Enter a detailed description above and click search to find matching items. Enable "Alert me if found" to get notified when someone finds your item.
+                Enter a detailed description above and click search to find matching items. Enable &quot;Alert me if found&quot; to get notified when someone finds your item.
               </p>
             </CardContent>
           </Card>

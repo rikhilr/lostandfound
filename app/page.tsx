@@ -29,7 +29,7 @@ export default function Home() {
                   <span className="text-foreground/80">with their owners</span>
                 </h1>
                 <p className="text-lg sm:text-xl md:text-2xl text-muted-foreground leading-relaxed max-w-xl">
-                  AI-powered matching technology finds what's lost. Upload found items or search for what you've lost—all in seconds.
+                  AI-powered matching technology finds what&apos;s lost. Upload found items or search for what you&apos;ve lost—all in seconds.
                 </p>
               </div>
 
