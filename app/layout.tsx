@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import Link from 'next/link'
+import Image from 'next/image' // 1. Import the Image component
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/toaster'
 import { Space_Grotesk } from 'next/font/google'
@@ -12,7 +13,7 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: 'Lost & Found - AI-Powered Item Recovery',
+  title: 'GetHub',
   description: 'Find your lost items or report found items with AI-powered matching',
 }
 
@@ -26,9 +27,19 @@ export default function RootLayout({
       <body className={`antialiased ${spaceGrotesk.variable} font-sans`}>
         <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="container flex h-16 items-center justify-between">
-            <Link href="/" className="text-xl font-semibold">
-              Lost & Found
+            
+            {/* 2. Updated Logo Section */}
+            <Link href="/" className="flex items-center gap-2 text-xl font-semibold">
+              <Image 
+                src="/logo.png" 
+                alt="GetHub Logo" 
+                width={32} 
+                height={32} 
+                className="rounded-full dark:invert" // Optional: Inverts colors in dark mode if the logo is black with transparent bg
+              />
+              <span>GetHub</span>
             </Link>
+
             <div className="flex items-center space-x-6">
               <Button variant="ghost" asChild className="hover:bg-muted">
                 <Link href="/found">
@@ -51,4 +62,3 @@ export default function RootLayout({
     </html>
   )
 }
-
