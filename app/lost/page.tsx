@@ -1,5 +1,5 @@
 'use client'
-
+import LocationAutocomplete from "@/components/LocationAutocomplete";
 import { useState } from 'react'
 import ResultCard from '@/components/ResultCard'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -255,13 +255,10 @@ export default function LostPage() {
                 <Label htmlFor="search-location">Location Lost (Optional)</Label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="search-location"
-                    value={searchLocation}
-                    onChange={(e) => setSearchLocation(e.target.value)}
-                    placeholder="e.g. Central Park, Subway..."
-                    className="pl-9 bg-background border-border"
-                  />
+                  <LocationAutocomplete
+  value={searchLocation}
+  onChange={setSearchLocation}
+/>
                 </div>
               </div>
 

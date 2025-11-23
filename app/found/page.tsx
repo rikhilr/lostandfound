@@ -1,5 +1,5 @@
 'use client'
-
+import LocationAutocomplete from "@/components/LocationAutocomplete";
 import { useState } from 'react'
 import ImageUpload from '@/components/ImageUpload'
 import { useRouter } from 'next/navigation'
@@ -157,15 +157,10 @@ export default function FoundPage() {
                 <Label htmlFor="location">Location Found</Label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="location"
-                    type="text"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="e.g., Central Park, New York"
-                    className="pl-9 bg-background border-border"
-                    required
-                  />
+                  <LocationAutocomplete
+  value={location}
+  onChange={setLocation}
+/>
                 </div>
               </div>
 
