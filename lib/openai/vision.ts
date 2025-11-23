@@ -25,7 +25,7 @@ export async function analyzeMultipleImages(imageUrls: string[]): Promise<ImageA
 
   // Use LLM to intelligently combine the analyses
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-5.1',
     messages: [
       {
         role: 'user',
@@ -55,7 +55,7 @@ Return JSON with:
       },
     ],
     response_format: { type: 'json_object' },
-    max_tokens: 1000,
+    max_completion_tokens: 1000,
   })
 
   const content = response.choices[0]?.message?.content
