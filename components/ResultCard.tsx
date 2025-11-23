@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,8 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { MapPin, Calendar, Shield, CheckCircle2, Mail, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { MapPin, Calendar, Shield, CheckCircle2, Mail, ChevronLeft, ChevronRight, X, Volume2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/components/ui/use-toast'
 
 interface ResultCardProps {
   item: {
@@ -31,6 +32,7 @@ interface ResultCardProps {
 }
 
 export default function ResultCard({ item, onClaim }: ResultCardProps) {
+  // Original State
   const [showClaimForm, setShowClaimForm] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
   const [claimerContact, setClaimerContact] = useState('')
@@ -39,6 +41,13 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
   const [imageError, setImageError] = useState(false)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
+  // New Audio State
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const { toast } = useToast()
+
+  // Helper to handle image arrays/singles safely
   const images = item.image_urls || (item.image_url ? [item.image_url] : [])
   const primaryImage = images[0] || item.image_url || ''
 
@@ -67,9 +76,76 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
     setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length)
   }
 
+  // --- New Text-to-Speech Handler ---
+  const handleListen = async (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent opening the details modal
+    
+    if (isPlaying) {
+      audioRef.current?.pause()
+      setIsPlaying(false)
+      return
+    }
+
+    setIsLoadingAudio(true)
+
+    try {
+      // Create text to read: Title followed by description
+      const textToRead = `${item.auto_title}. ${item.auto_description}`
+      
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to generate audio')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      
+      // Cleanup previous audio to free memory
+      if (audioRef.current) {
+        audioRef.current.pause()
+        URL.revokeObjectURL(audioRef.current.src)
+      }
+
+      const audio = new Audio(url)
+      audioRef.current = audio
+      
+      audio.onended = () => setIsPlaying(false)
+      audio.onpause = () => setIsPlaying(false)
+      
+      await audio.play()
+      setIsPlaying(true)
+    } catch (error) {
+      console.error('TTS Error:', error)
+      toast({
+        title: "Audio Error",
+        description: "Could not play audio description. Please try again.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoadingAudio(false)
+    }
+  }
+
+  // Cleanup audio on component unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        URL.revokeObjectURL(audioRef.current.src)
+      }
+    }
+  }, [])
+
   return (
     <>
       <Card className="group overflow-hidden border-2 transition-all hover:shadow-lg hover:scale-[1.02] cursor-pointer" onClick={() => setShowDetails(true)}>
+        {/* Image Section */}
         <div className="relative h-64 w-full overflow-hidden bg-muted">
           {!imageError && primaryImage ? (
             <>
@@ -96,10 +172,13 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
             </div>
           )}
         </div>
+
+        {/* Content Section */}
         <CardHeader>
           <CardTitle className="line-clamp-2">{item.auto_title}</CardTitle>
           <CardDescription className="line-clamp-2">{item.auto_description}</CardDescription>
         </CardHeader>
+        
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-1">
@@ -111,6 +190,24 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
               <span>{new Date(item.created_at).toLocaleDateString()}</span>
             </div>
           </div>
+
+          {/* Listen Button - Added Here */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 border-primary/20 hover:bg-primary/5 hover:text-primary"
+            onClick={handleListen}
+            disabled={isLoadingAudio}
+          >
+            {isLoadingAudio ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Volume2 className={cn("h-4 w-4", isPlaying && "text-primary animate-pulse")} />
+            )}
+            {isLoadingAudio ? 'Generating Audio...' : isPlaying ? 'Stop Listening' : 'Listen to Description'}
+          </Button>
+
+          {/* Claim Logic (Preserved) */}
           {isClaimed ? (
             <Button
               className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -199,6 +296,7 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
       </CardContent>
     </Card>
 
+    {/* Details Modal (Preserved) */}
     <Dialog open={showDetails} onOpenChange={setShowDetails}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -296,7 +394,7 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
             </div>
           )}
 
-          {/* Claim Button */}
+          {/* Modal Claim Button */}
           {isClaimed ? (
             <Button
               className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -325,4 +423,3 @@ export default function ResultCard({ item, onClaim }: ResultCardProps) {
     </>
   )
 }
-
