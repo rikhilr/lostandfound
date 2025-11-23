@@ -15,60 +15,60 @@ export async function analyzeMultipleImages(imageUrls: string[]): Promise<ImageA
   }
 
   if (imageUrls.length === 1) {
-    // Single image - just return its analysis
     return analyzeImage(imageUrls[0])
   }
 
-  // Analyze all images in parallel for better performance
+  // Analyze all images in parallel
   const analyses = await Promise.all(
     imageUrls.map(url => analyzeImage(url))
   )
 
-  // Create a comprehensive combined description
-  // Focus on common features across images and unique details
-  const allTags = new Set<string>()
-  analyses.forEach(analysis => {
-    analysis.tags.forEach(tag => allTags.add(tag))
+  // Use LLM to intelligently combine the analyses
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: `You have ${analyses.length} different analyses of the same lost/found item from different angles/views. Synthesize them into one coherent analysis.
+
+Individual analyses:
+${analyses.map((a, i) => `
+View ${i + 1}:
+Title: ${a.title}
+Description: ${a.description}
+Tags: ${a.tags.join(', ')}
+`).join('\n')}
+
+Create a unified analysis that:
+1. Identifies the most accurate and descriptive title
+2. Combines descriptions into a coherent narrative (not just concatenating)
+3. Prioritizes the most important and consistent visual features
+4. Removes duplicate or redundant tags
+5. Highlights any identifying information (names, IDs, etc.)
+
+Return JSON with:
+{
+  "title": "Most accurate item name based on all views",
+  "description": "Coherent 2-3 sentence description combining key details from all views",
+  "tags": ["15 most relevant tags, removing duplicates and prioritizing identifying features"]
+}`,
+      },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 1000,
   })
 
-  // Build a unified description that captures the item from all angles
-  const descriptions = analyses.map(a => a.description)
-  const combinedDescription = descriptions.length > 1
-    ? `This item appears in multiple views: ${descriptions.join(' Additional view shows: ')}`
-    : descriptions[0]
+  const content = response.choices[0]?.message?.content
+  if (!content) {
+    throw new Error('No response from OpenAI')
+  }
 
-  // Use the most descriptive title (prefer one with brand/material info)
-  // Also filter out any titles that contain "json" or other artifacts
-  const validAnalyses = analyses.filter(a => {
-    const title = a.title.toLowerCase()
-    return title.length > 2 && 
-           !title.includes('json') && 
-           !title.includes('```') &&
-           title !== 'found item'
-  })
+  const parsed = JSON.parse(content)
   
-  const bestTitle = validAnalyses.length > 0
-    ? (validAnalyses.find(a => 
-        a.title.toLowerCase().includes('leather') || 
-        a.title.toLowerCase().includes('wallet') ||
-        a.title.toLowerCase().includes('phone') ||
-        a.title.toLowerCase().includes('case') ||
-        a.title.toLowerCase().includes('key') ||
-        a.title.toLowerCase().includes('card')
-      )?.title || validAnalyses[0].title)
-    : 'Found Item'
-
-  // Clean the final title one more time
-  const finalTitle = bestTitle
-    .replace(/^json\s*/i, '')
-    .replace(/^["']|["']$/g, '')
-    .trim()
-    .substring(0, 50) || 'Found Item'
-
   return {
-    title: finalTitle,
-    description: combinedDescription,
-    tags: Array.from(allTags).slice(0, 15), // Limit to 15 most relevant tags
+    title: parsed.title?.substring(0, 50) || 'Found Item',
+    description: parsed.description || 'A found item',
+    tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 15) : ['item'],
   }
 }
 
@@ -118,6 +118,19 @@ Example:
   "title": "John Doe Student ID Card",
   "description": "A student ID card with the name John Doe and the student ID number 1234567890. The card is made of plastic and has a barcode on the back. The card is in good condition and shows no signs of wear.",
   "tags": ["John Doe", "1234567890", "student id", "plastic", "barcode"]
+}
+Example:
+{
+  "title": "Green Iphone 17",
+  "description": "A green iPhone 17 with a glass back and a metal frame. The phone is in good condition and shows no signs of wear.",
+  "tags": ["green", "iPhone 17", "glass back", "metal frame", "good condition", "no wear"]
+}
+
+Example:
+{
+  "title": "Adidas Sneakers",
+  "description": "A pair of Adidas sneakers with a white upper and a black sole. The sneakers are in good condition and shows no signs of wear.",
+  "tags": ["Adidas", "sneakers", "white", "black", "good condition", "no wear"]
 }
 
 `,
