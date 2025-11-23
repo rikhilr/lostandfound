@@ -3,7 +3,13 @@ import './globals.css'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/toaster'
-import { Search, Upload } from 'lucide-react'
+import { Space_Grotesk } from 'next/font/google'
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Lost & Found - AI-Powered Item Recovery',
@@ -16,29 +22,22 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="scroll-smooth">
-      <body className="antialiased">
-        <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <html lang="en" className="scroll-smooth dark">
+      <body className={`antialiased ${spaceGrotesk.variable} font-sans`}>
+        <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="container flex h-16 items-center justify-between">
-            <Link href="/" className="flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Search className="h-5 w-5" />
-              </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                Lost & Found
-              </span>
+            <Link href="/" className="text-xl font-semibold">
+              Lost & Found
             </Link>
-            <div className="flex items-center space-x-2">
-              <Button variant="ghost" asChild>
-                <Link href="/found" className="flex items-center space-x-2">
-                  <Upload className="h-4 w-4" />
-                  <span>Report Found</span>
+            <div className="flex items-center space-x-6">
+              <Button variant="ghost" asChild className="hover:bg-muted">
+                <Link href="/found">
+                  Report Found
                 </Link>
               </Button>
-              <Button variant="ghost" asChild>
-                <Link href="/lost" className="flex items-center space-x-2">
-                  <Search className="h-4 w-4" />
-                  <span>Search Lost</span>
+              <Button variant="ghost" asChild className="hover:bg-muted">
+                <Link href="/lost">
+                  Search Lost
                 </Link>
               </Button>
             </div>

@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { Upload, Sparkles, MapPin, AlertCircle } from 'lucide-react'
+import { Upload, Sparkles, MapPin, AlertCircle, ArrowRight } from 'lucide-react'
+import ScrollAnimation from '@/components/ScrollAnimation'
 
 export default function FoundPage() {
   const router = useRouter()
@@ -70,7 +71,6 @@ export default function FoundPage() {
       }
 
       if (data.matchAlert && data.matchAlert.foundMatch) {
-        // Toast for Match Found (No Bounty)
         toast({
           title: "MATCH FOUND! 🎉",
           description: (
@@ -110,99 +110,105 @@ export default function FoundPage() {
   }
 
   return (
-    <div className="container max-w-3xl py-12 md:py-24">
-      <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl mb-4">
-          Report Found Item
-        </h1>
-          <p className="text-lg text-muted-foreground">
-            Upload photos and let our AI do the rest
-          </p>
-      </div>
+    <div className="min-h-screen py-8 sm:py-12 md:py-24">
+      <div className="container max-w-2xl px-4 sm:px-6">
+        {/* Header */}
+        <ScrollAnimation>
+          <div className="mb-8 sm:mb-12">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4">
+              Report Found Item
+            </h1>
+            <p className="text-base sm:text-lg text-muted-foreground">
+              Upload photos and our AI will automatically match it with lost items
+            </p>
+          </div>
+        </ScrollAnimation>
 
-      <Card className="border-2">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Item Details
-          </CardTitle>
-          <CardDescription>
-            Our AI will automatically generate a description, tags, and a proof question for verification.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="image">Upload Photo</Label>
-              <ImageUpload
-                onImageSelect={(files) => setImageFiles(files)}
-                onLocationDetected={(detectedLocation) => {
-                  setLocation(detectedLocation)
-                  toast({
-                    title: "Location auto-filled",
-                    description: "Location detected from photo",
-                  })
-                }}
-                currentImages={imageFiles.map(file => URL.createObjectURL(file))}
-              />
-              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Sparkles className="h-3 w-3" />
-                Location will be detected automatically if available in the photo
-              </p>
-            </div>
+        {/* Form Card */}
+        <ScrollAnimation delay={100}>
+          <Card className="border bg-card hover:border-primary/20 transition-colors duration-300">
+          <CardHeader className="pb-6">
+            <CardTitle className="text-2xl">Item Details</CardTitle>
+            <CardDescription>
+              Our AI will analyze the images and generate a description automatically
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="image">Upload Photos</Label>
+                <ImageUpload
+                  onImageSelect={(files) => setImageFiles(files)}
+                  onLocationDetected={(detectedLocation) => {
+                    setLocation(detectedLocation)
+                    toast({
+                      title: "Location auto-filled",
+                      description: "Location detected from photo",
+                    })
+                  }}
+                  currentImages={imageFiles.map(file => URL.createObjectURL(file))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Location will be detected automatically if available in the photo
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="location">Location Found</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="space-y-2">
+                <Label htmlFor="location">Location Found</Label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="location"
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g., Central Park, New York"
+                    className="pl-9 bg-background border-border"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="contact">Your Contact Information</Label>
                 <Input
-                  id="location"
+                  id="contact"
                   type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g., Central Park, New York"
-                  className="pl-9"
+                  value={contactInfo}
+                  onChange={(e) => setContactInfo(e.target.value)}
+                  placeholder="email@example.com or phone number"
+                  className="bg-background border-border"
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  This will be shared with the owner if they claim this item
+                </p>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="contact">Your Contact Information</Label>
-              <Input
-                id="contact"
-                type="text"
-                value={contactInfo}
-                onChange={(e) => setContactInfo(e.target.value)}
-                placeholder="email@example.com or phone number"
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                This will be shared with the owner if they claim this item
-              </p>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              size="lg"
-              className="w-full"
-            >
-              {isSubmitting ? (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4 animate-pulse" />
-                  Processing with AI...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Submit Found Item
-                </>
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                size="lg"
+                className="w-full h-12 bg-foreground text-background hover:bg-foreground/90"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4 animate-pulse" />
+                    Processing with AI...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Submit Found Item
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+        </ScrollAnimation>
+      </div>
     </div>
   )
 }

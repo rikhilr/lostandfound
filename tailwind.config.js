@@ -55,6 +55,9 @@ module.exports = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      fontFamily: {
+        sans: ['var(--font-space-grotesk)', 'system-ui', 'sans-serif'],
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -65,19 +68,62 @@ module.exports = {
           to: { height: "0" },
         },
         "fade-in": {
-          from: { opacity: "0", transform: "translateY(10px)" },
+          from: { opacity: "0", transform: "translateY(20px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "fade-in-up": {
+          from: { opacity: "0", transform: "translateY(30px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "slide-in": {
           from: { transform: "translateX(-100%)" },
           to: { transform: "translateX(0)" },
         },
+        "pulse": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
+        "scale-in": {
+          from: { opacity: "0", transform: "scale(0.95)" },
+          to: { opacity: "1", transform: "scale(1)" },
+        },
+        "blob": {
+          "0%": { transform: "translate(0px, 0px) scale(1)" },
+          "33%": { transform: "translate(30px, -50px) scale(1.1)" },
+          "66%": { transform: "translate(-20px, 20px) scale(0.9)" },
+          "100%": { transform: "translate(0px, 0px) scale(1)" },
+        },
+        "blob-2": {
+          "0%": { transform: "translate(0px, 0px) scale(1)" },
+          "33%": { transform: "translate(-40px, 30px) scale(0.8)" },
+          "66%": { transform: "translate(20px, -30px) scale(1.2)" },
+          "100%": { transform: "translate(0px, 0px) scale(1)" },
+        },
+        "blob-3": {
+          "0%": { transform: "translate(0px, 0px) scale(1)" },
+          "33%": { transform: "translate(25px, 40px) scale(1.15)" },
+          "66%": { transform: "translate(-35px, -25px) scale(0.85)" },
+          "100%": { transform: "translate(0px, 0px) scale(1)" },
+        },
+        "blob-4": {
+          "0%": { transform: "translate(0px, 0px) scale(1)" },
+          "33%": { transform: "translate(-30px, -40px) scale(0.9)" },
+          "66%": { transform: "translate(40px, 25px) scale(1.1)" },
+          "100%": { transform: "translate(0px, 0px) scale(1)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.5s ease-out",
+        "fade-in": "fade-in 0.8s ease-out",
+        "fade-in-up": "fade-in-up 0.8s ease-out",
         "slide-in": "slide-in 0.3s ease-out",
+        "pulse": "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "scale-in": "scale-in 0.5s ease-out",
+        "blob": "blob 20s ease-in-out infinite",
+        "blob-2": "blob-2 25s ease-in-out infinite",
+        "blob-3": "blob-3 18s ease-in-out infinite",
+        "blob-4": "blob-4 22s ease-in-out infinite",
       },
     },
   },
