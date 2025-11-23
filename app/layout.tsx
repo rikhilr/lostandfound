@@ -5,6 +5,7 @@ import Image from 'next/image' // 1. Import the Image component
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/toaster'
 import { Space_Grotesk } from 'next/font/google'
+import Script from "next/script";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -25,6 +26,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth dark">
       <body className={`antialiased ${spaceGrotesk.variable} font-sans`}>
+      <Script
+    src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&libraries=places`}
+    strategy="afterInteractive"
+    
+  />
         <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="container flex h-16 items-center justify-between">
             
