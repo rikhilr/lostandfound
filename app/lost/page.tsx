@@ -265,7 +265,7 @@ export default function LostPage() {
               Search for Lost Item
             </h1>
             <p className="text-base sm:text-lg text-muted-foreground">
-              Describe what you lost and our AI will find matches
+              Describe what you lost and our system will find matches
             </p>
           </div>
         </ScrollAnimation>
@@ -276,7 +276,7 @@ export default function LostPage() {
           <CardHeader className="pb-6">
             <CardTitle className="text-2xl">Search Description</CardTitle>
             <CardDescription>
-              Be as detailed as possible. Our AI will match your description to found items.
+              Be as detailed as possible. Our system will match your description to found items.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -529,7 +529,7 @@ export default function LostPage() {
                   <div className="h-16 w-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                   <Search className="absolute inset-0 m-auto h-6 w-6 text-primary animate-pulse" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">Searching with AI...</h3>
+                <h3 className="text-xl font-semibold mb-2">Searching...</h3>
                 <p className="text-sm text-muted-foreground text-center max-w-md">
                   Analyzing your description and matching it with found items
                 </p>
