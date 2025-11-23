@@ -1,246 +1,199 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase/server'
-import { analyzeMultipleImages } from '@/lib/openai/vision'
-import { getImageEmbedding, getTextEmbedding, combineEmbeddings } from '@/lib/openai/embeddings'
+import { NextRequest, NextResponse } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase/server"
+import { analyzeMultipleImages } from "@/lib/openai/vision"
+import { getImageEmbedding, getTextEmbedding } from "@/lib/openai/embeddings"
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const imageFiles = formData.getAll('images') as File[]
-    const location = formData.get('location') as string
-    const contactInfo = formData.get('contact_info') as string
 
-    if (!imageFiles || imageFiles.length === 0) {
-      return NextResponse.json({ error: 'No images provided' }, { status: 400 })
+    const imageFiles = formData.getAll("images") as File[]
+    const location = formData.get("location") as string
+    const contactInfo = formData.get("contact_info") as string
+
+    const latRaw = formData.get("lat")
+    const lngRaw = formData.get("lng")
+
+    const lat =
+      typeof latRaw === "string" && latRaw.trim() !== "" ? Number(latRaw) : null
+    const lng =
+      typeof lngRaw === "string" && lngRaw.trim() !== "" ? Number(lngRaw) : null
+
+    console.log("📍 Incoming coordinates:", { lat, lng })
+
+    // --------------------------------------------
+    // VALIDATION
+    // --------------------------------------------
+    if (!imageFiles?.length) {
+      return NextResponse.json({ error: "No images provided" }, { status: 400 })
     }
-
     if (!location) {
-      return NextResponse.json({ error: 'Location is required' }, { status: 400 })
+      return NextResponse.json({ error: "Location is required" }, { status: 400 })
     }
-
     if (!contactInfo) {
-      return NextResponse.json({ error: 'Contact information is required' }, { status: 400 })
+      return NextResponse.json(
+        { error: "Contact information is required" },
+        { status: 400 }
+      )
     }
 
-    // 1. Upload all images to Supabase Storage
+    // --------------------------------------------
+    // 1. UPLOAD IMAGES
+    // --------------------------------------------
     const imageUrls: string[] = []
-    const uploadedPaths: string[] = []
 
-    for (const imageFile of imageFiles) {
-      const fileExt = imageFile.name.split('.').pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-      const filePath = `found-items/${fileName}`
+    for (const file of imageFiles) {
+      const ext = file.name.split(".").pop()
+      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const path = `found-items/${filename}`
 
-      const arrayBuffer = await imageFile.arrayBuffer()
-      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from('found-items')
-        .upload(filePath, arrayBuffer, {
-          contentType: imageFile.type,
-          upsert: false,
+      const buffer = await file.arrayBuffer()
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("found-items")
+        .upload(path, buffer, {
+          contentType: file.type,
         })
 
       if (uploadError) {
-        console.error('Upload error:', uploadError)
-        // Clean up already uploaded images
-        if (uploadedPaths.length > 0) {
-          await supabaseAdmin.storage.from('found-items').remove(uploadedPaths)
-        }
-        return NextResponse.json({ error: 'Failed to upload images' }, { status: 500 })
+        console.error("Image upload error:", uploadError)
+        return NextResponse.json(
+          { error: "Failed to upload image" },
+          { status: 500 }
+        )
       }
 
-      uploadedPaths.push(filePath)
-
-      // Get public URL
       const { data: urlData } = supabaseAdmin.storage
-        .from('found-items')
-        .getPublicUrl(filePath)
+        .from("found-items")
+        .getPublicUrl(path)
 
       imageUrls.push(urlData.publicUrl)
     }
 
-    // 2. Analyze ALL images with OpenAI Vision for comprehensive matching
+    // --------------------------------------------
+    // 2. ANALYZE IMAGES WITH OPENAI VISION
+    // --------------------------------------------
     const analysis = await analyzeMultipleImages(imageUrls)
 
-    // 3. Generate embeddings from comprehensive image analysis
-    // Image embedding focuses on visual features
+    if (!analysis) {
+      return NextResponse.json(
+        { error: "AI analysis failed" },
+        { status: 500 }
+      )
+    }
+
+    // --------------------------------------------
+    // 3. CREATE EMBEDDINGS (image + text merged)
+    // --------------------------------------------
     const imageEmbedding = await getImageEmbedding({
       description: analysis.description,
-      tags: analysis.tags
+      tags: analysis.tags,
     })
-    
-    // Text embedding from structured metadata
+
     const textEmbedding = await getTextEmbedding(
-      `${analysis.title} ${analysis.description} ${analysis.tags.join(' ')}`
-    )
-    
-    // Combine both for better matching (weighted: 60% image, 40% text)
-    const combinedEmbedding = imageEmbedding.map((val, idx) => 
-      (val * 0.6) + (textEmbedding[idx] * 0.4)
+      `${analysis.title} ${analysis.description} ${analysis.tags.join(" ")}`
     )
 
-    // 4. Insert into database
+    const combinedEmbedding = imageEmbedding.map(
+      (v, i) => v * 0.6 + textEmbedding[i] * 0.4
+    )
+
+    // --------------------------------------------
+    // 4. INSERT FOUND ITEM INTO DB
+    // --------------------------------------------
     const { data: dbData, error: dbError } = await supabaseAdmin
-      .from('items_found')
+      .from("items_found")
       .insert({
         image_urls: imageUrls,
         auto_title: analysis.title,
         auto_description: analysis.description,
         tags: analysis.tags,
-        location: location,
+        location,
         contact_info: contactInfo,
         embedding: combinedEmbedding,
         claimed: false,
+        lat,
+        lng,
       })
       .select()
       .single()
 
     if (dbError) {
-      console.error('Database error:', dbError)
-      // Clean up uploaded images if DB insert fails
-      if (uploadedPaths.length > 0) {
-        await supabaseAdmin.storage.from('found-items').remove(uploadedPaths)
-      }
-      return NextResponse.json({ error: 'Failed to save item' }, { status: 500 })
-    }
-
-    // 5. Reverse Match: Check if this found item matches any reported lost items with alerts enabled
-    // Use the same lenient thresholds as search-lost for consistency
-    let matchingLostItems: any[] = []
-    let matchThreshold = 0.5
-    
-    console.log('Checking for matching lost items with alerts enabled...')
-    console.log('Using combined embedding (60% image, 40% text)')
-    
-    // Try multiple thresholds (same as search-lost)
-    // First try with the combined embedding (works best for lost items with images)
-    for (const threshold of [0.5, 0.4, 0.3]) {
-      const { data, error } = await supabaseAdmin.rpc(
-        'search_similar_lost_items',
-        {
-          query_embedding: combinedEmbedding,
-          match_threshold: threshold,
-          match_count: 5
-        }
+      console.error("DB Insert Error:", dbError)
+      return NextResponse.json(
+        { error: "Failed to save found item" },
+        { status: 500 }
       )
-      
-      if (error) {
-        console.error('Error searching for lost items:', error)
-        break
-      }
-      
-      if (data && data.length > 0) {
-        matchingLostItems = data
-        matchThreshold = threshold
-        console.log(`Found ${data.length} matching lost item(s) with combined embedding at threshold ${threshold}`)
-        break
-      }
     }
-    
-    // If no matches with combined embedding, try with just text embedding
-    // This helps match text-only lost items (no images provided)
-    if (matchingLostItems.length === 0) {
-      console.log('No matches with combined embedding, trying text-only embedding...')
-      
-      for (const threshold of [0.5, 0.4, 0.3]) {
-        const { data, error } = await supabaseAdmin.rpc(
-          'search_similar_lost_items',
-          {
-            query_embedding: textEmbedding,
-            match_threshold: threshold,
-            match_count: 5
-          }
+
+    // --------------------------------------------
+    // 5. RUN MATCHING AGAINST LOST ITEMS (alerts)
+    // --------------------------------------------
+    const { data: lostMatches, error: lostError } = await supabaseAdmin.rpc(
+      "search_similar_lost_items",
+      {
+        query_embedding: combinedEmbedding,
+        match_threshold: 0.70,
+        match_count: 5,
+      }
+    )
+
+    if (lostError) {
+      console.error("Lost match RPC error:", lostError)
+    }
+
+    if (!lostMatches || lostMatches.length === 0) {
+      // No matches → return normally
+      return NextResponse.json({
+        success: true,
+        item: dbData,
+        matchAlert: null,
+      })
+    }
+
+    // --------------------------------------------
+    // 6. INSERT MATCH NOTIFICATIONS
+    // --------------------------------------------
+    for (const match of lostMatches) {
+      if (!match.notification_token) {
+        console.warn(
+          "⚠️ Lost item missing notification_token, skipping:",
+          match.id
         )
-        
-        if (error) {
-          console.error('Error searching for lost items with text embedding:', error)
-          break
-        }
-        
-        if (data && data.length > 0) {
-          matchingLostItems = data
-          matchThreshold = threshold
-          console.log(`Found ${data.length} matching lost item(s) with text embedding at threshold ${threshold}`)
-          break
-        }
+        continue
       }
-    }
-    
-    if (matchingLostItems.length === 0) {
-      console.log('No matching lost items found with alerts enabled after trying both embeddings')
-    }
 
-    // 6. Create match notifications for each matching lost item
-    const notificationUrls: string[] = []
-    
-    if (matchingLostItems && matchingLostItems.length > 0) {
-      console.log(`Processing ${matchingLostItems.length} matching lost item(s)...`)
-      
-      for (const lostItem of matchingLostItems) {
-        console.log(`Processing lost item ${lostItem.id}, similarity: ${lostItem.similarity}`)
-        
-        // Get the notification token for this lost item
-        const { data: lostItemData, error: lostItemError } = await supabaseAdmin
-          .from('items_lost')
-          .select('notification_token, description')
-          .eq('id', lostItem.id)
-          .single()
+      const { error: notifErr } = await supabaseAdmin
+        .from("match_notifications")
+        .insert({
+          lost_item_id: match.id,
+          found_item_id: dbData.id,
+          notification_token: match.notification_token,
+        })
 
-        if (lostItemError) {
-          console.error('Error fetching lost item data:', lostItemError)
-          continue
-        }
-
-        if (lostItemData?.notification_token) {
-          console.log(`Creating notification for lost item ${lostItem.id} with token ${lostItemData.notification_token.substring(0, 20)}...`)
-          
-          // Create a match notification
-          const { error: notifError } = await supabaseAdmin
-            .from('match_notifications')
-            .insert({
-              lost_item_id: lostItem.id,
-              found_item_id: dbData.id,
-              notification_token: lostItemData.notification_token,
-              viewed: false
-            })
-
-          if (notifError) {
-            console.error('Error creating notification:', notifError)
-          } else {
-            console.log(`Notification created successfully for lost item ${lostItem.id}`)
-            notificationUrls.push(`/notify/${lostItemData.notification_token}`)
-          }
-        } else {
-          console.warn(`Lost item ${lostItem.id} has no notification token`)
-        }
+      if (notifErr) {
+        console.error("Notification insert error:", notifErr)
       }
     }
 
-    // 7. Prepare response with match info
-    let matchAlert = null
-    
-    if (matchingLostItems && matchingLostItems.length > 0) {
-      const bestMatch = matchingLostItems[0]
-      
-      matchAlert = {
-        foundMatch: true,
-        message: `This matches a reported lost item!`,
-        matchId: bestMatch.id,
-        contactInfo: bestMatch.contact_info,
-        notificationUrls: notificationUrls
-      }
-    }
-
+    // --------------------------------------------
+    // 7. RETURN MATCH ALERT FOR TOAST UI
+    // --------------------------------------------
     return NextResponse.json({
       success: true,
       item: dbData,
-      matchAlert
+      matchAlert: {
+        foundMatch: true,
+        contactInfo: lostMatches[0].contact_info,
+      },
     })
-  } catch (error) {
-    console.error('Error in found-item API:', error)
+  } catch (err) {
+    console.error("Found-item API error:", err)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      {
+        error: err instanceof Error ? err.message : "Internal server error",
+      },
       { status: 500 }
     )
   }
 }
-

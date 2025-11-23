@@ -18,6 +18,7 @@ export default function FoundPage() {
   const [location, setLocation] = useState('')
   const [contactInfo, setContactInfo] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,6 +59,10 @@ export default function FoundPage() {
       })
       formData.append('location', location)
       formData.append('contact_info', contactInfo)
+      formData.append("lat", coords?.lat ? String(coords.lat) : "");
+      formData.append("lng", coords?.lng ? String(coords.lng) : "");
+
+      console.log("📤 Submitting with coords:", coords)
 
       const response = await fetch('/api/found-item', {
         method: 'POST',
@@ -146,6 +151,14 @@ export default function FoundPage() {
                       description: "Location detected from photo",
                     })
                   }}
+                  onCoordinatesDetected={(detectedCoords) => {
+                    setCoords(detectedCoords)
+                    console.log("✅ Coordinates detected from image:", detectedCoords)
+                    toast({
+                      title: "Coordinates detected",
+                      description: `Lat: ${detectedCoords.lat.toFixed(6)}, Lng: ${detectedCoords.lng.toFixed(6)}`,
+                    })
+                  }}
                   currentImages={imageFiles.map(file => URL.createObjectURL(file))}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -158,10 +171,19 @@ export default function FoundPage() {
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <LocationAutocomplete
-  value={location}
-  onChange={setLocation}
-/>
+                    value={location}
+                    onChange={setLocation}
+                    onSelectCoordinates={(c) => {
+                      console.log("✅ Coordinates from autocomplete:", c);
+                      setCoords(c);
+                    }}
+                  />
                 </div>
+                {coords && (
+                  <p className="text-xs text-muted-foreground">
+                    📍 Coordinates: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

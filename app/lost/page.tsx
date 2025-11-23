@@ -24,6 +24,7 @@ interface SearchResult {
   similarity: number
 }
 
+
 export default function LostPage() {
   const { toast } = useToast()
   
@@ -37,6 +38,12 @@ export default function LostPage() {
   const [alertEnabled, setAlertEnabled] = useState(false)
   const [contactInfo, setContactInfo] = useState('')
   const [alertImages, setAlertImages] = useState<File[]>([])
+
+  const [coords, setCoords] = useState<{ lat: number | null; lng: number | null }>({
+    lat: null,
+    lng: null
+  });
+  const [radiusKm, setRadiusKm] = useState(5);
   
   // Claim State
   const [claimStatus, setClaimStatus] = useState<{ [key: string]: 'success' | 'error' | null }>({})
@@ -95,9 +102,13 @@ export default function LostPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           description,
-          location: searchLocation 
+          location: searchLocation,
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+          radius: radiusKm,
+          contact_info: contactInfo,
         }),
       })
 
@@ -258,9 +269,22 @@ export default function LostPage() {
                   <LocationAutocomplete
   value={searchLocation}
   onChange={setSearchLocation}
+  onSelectCoordinates={(c) => setCoords(c)}
 />
                 </div>
               </div>
+              <input
+  type="range"
+  min={1}
+  max={50}
+  value={radiusKm}
+  onChange={(e) => setRadiusKm(Number(e.target.value))}
+  className="w-full"
+/>
+
+<p className="text-sm text-muted-foreground">
+  Search radius: {radiusKm} km
+</p>
 
               {/* Alert Toggle */}
               <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">

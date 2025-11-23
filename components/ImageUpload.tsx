@@ -12,10 +12,16 @@ import exifr from 'exifr'
 interface ImageUploadProps {
   onImageSelect: (files: File[]) => void
   onLocationDetected?: (location: string) => void
+  onCoordinatesDetected?: (coords: { lat: number; lng: number }) => void  // ✅ New prop
   currentImages?: string[]
 }
 
-export default function ImageUpload({ onImageSelect, onLocationDetected, currentImages = [] }: ImageUploadProps) {
+export default function ImageUpload({ 
+  onImageSelect, 
+  onLocationDetected, 
+  onCoordinatesDetected,  // ✅ New prop
+  currentImages = [] 
+}: ImageUploadProps) {
   const [previews, setPreviews] = useState<string[]>(currentImages)
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
@@ -58,7 +64,8 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     }
   }
 
-  const extractLocationFromImage = async (file: File): Promise<string | null> => {
+  // ✅ Modified to return both location string and coordinates
+  const extractLocationFromImage = async (file: File): Promise<{ location: string; coords: { lat: number; lng: number } } | null> => {
     try {
       await logToServer('Starting EXIF extraction', { fileName: file.name, fileSize: file.size, fileType: file.type })
       
@@ -110,7 +117,12 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
       
       if (exifData?.latitude && exifData?.longitude) {
         const location = await reverseGeocode(exifData.latitude, exifData.longitude)
-        return location
+        if (location) {
+          return {
+            location,
+            coords: { lat: exifData.latitude, lng: exifData.longitude }
+          }
+        }
       }
       
       await logToServer('No GPS data found in EXIF after all attempts')
@@ -122,7 +134,8 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
     }
   }
 
-  const getCurrentLocation = async (): Promise<string | null> => {
+  // ✅ Modified to return both location string and coordinates
+  const getCurrentLocation = async (): Promise<{ location: string; coords: { lat: number; lng: number } } | null> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         logToServer('Geolocation not available')
@@ -139,7 +152,14 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
           })
           if (position?.coords) {
             const location = await reverseGeocode(position.coords.latitude, position.coords.longitude)
-            resolve(location)
+            if (location) {
+              resolve({
+                location,
+                coords: { lat: position.coords.latitude, lng: position.coords.longitude }
+              })
+            } else {
+              resolve(null)
+            }
           } else {
             resolve(null)
           }
@@ -194,18 +214,28 @@ export default function ImageUpload({ onImageSelect, onLocationDetected, current
         setIsProcessing(true)
         setLocationStatus('Processing image...')
 
-        let location: string | null = null
+        let locationData: { location: string; coords: { lat: number; lng: number } } | null = null
         
-        location = await extractLocationFromImage(newFiles[0])
+        // ✅ Try EXIF first
+        locationData = await extractLocationFromImage(newFiles[0])
         
-        if (!location) {
-          location = await getCurrentLocation()
+        // ✅ Fall back to geolocation
+        if (!locationData) {
+          locationData = await getCurrentLocation()
         }
 
-        if (location && onLocationDetected) {
-          await logToServer('Location detected successfully', { location })
-          onLocationDetected(location)
-          setLocationStatus(`Location detected: ${location}`)
+        if (locationData) {
+          await logToServer('Location detected successfully', locationData)
+          
+          // ✅ Call both callbacks
+          if (onLocationDetected) {
+            onLocationDetected(locationData.location)
+          }
+          if (onCoordinatesDetected) {
+            onCoordinatesDetected(locationData.coords)
+          }
+          
+          setLocationStatus(`Location detected: ${locationData.location}`)
         } else {
           await logToServer('Location detection failed - both methods failed')
           setLocationStatus('Location not detected - please enter manually')

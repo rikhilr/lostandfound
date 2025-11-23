@@ -45,7 +45,7 @@ export default function RootLayout({
               />
               <span>GetHub</span>
             </Link>
-
+            
             <div className="flex items-center space-x-6">
               <Button variant="ghost" asChild className="hover:bg-muted">
                 <Link href="/found">
