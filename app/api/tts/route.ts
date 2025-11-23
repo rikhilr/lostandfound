@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     // Using a standard English voice model ID (from Fish Audio docs examples)
     // You can swap this with any model ID from https://fish.audio/discovery
-    const referenceId = '7f92f8afb8ec43bf81429cc1c9199cb1' 
+    const referenceId = 'e4f6985625fa4034bed6000e9644c6a0' 
 
     const response = await fetch('https://api.fish.audio/v1/tts', {
       method: 'POST',
