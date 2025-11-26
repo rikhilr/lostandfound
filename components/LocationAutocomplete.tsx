@@ -19,7 +19,7 @@ export default function LocationAutocomplete({
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const autoRef = useRef<any>(null);
-  //Inputs
+  //I
   useEffect(() => {
     if (!window.google || !window.google.maps?.places) return;
     if (!inputRef.current) return;
